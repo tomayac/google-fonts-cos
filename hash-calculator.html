@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Google Fonts SHA-256 Calculator</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+      body {
+        font-family: monospace;
+        max-width: 1400px;
+        margin: 2rem auto;
+        padding: 0 1.5rem;
+        color: #111;
+      }
+      h1 {
+        font-size: 1.1rem;
+        margin: 0 0 0.25rem;
+      }
+      p {
+        margin: 0 0 1rem;
+        color: #555;
+        font-size: 0.85rem;
+      }
+      label {
+        display: block;
+        font-size: 0.85rem;
+        margin-bottom: 0.25rem;
+      }
+      textarea {
+        width: 100%;
+        font-family: inherit;
+        font-size: 0.85rem;
+        padding: 0.4rem;
+        border: 1px solid #ccc;
+        resize: vertical;
+      }
+      button {
+        margin-top: 0.5rem;
+        padding: 0.4rem 1.1rem;
+        font-family: inherit;
+        font-size: 0.85rem;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      #status {
+        margin: 0.75rem 0 0;
+        font-size: 0.85rem;
+        color: #555;
+        min-height: 1.2em;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 1rem;
+        font-size: 0.8rem;
+      }
+      th {
+        text-align: left;
+        border-bottom: 2px solid #bbb;
+        padding: 0.3rem 0.6rem;
+        white-space: nowrap;
+      }
+      td {
+        padding: 0.25rem 0.6rem;
+        border-bottom: 1px solid #e8e8e8;
+        vertical-align: top;
+      }
+      td.hash {
+        color: #080;
+        word-break: break-all;
+      }
+      td.url {
+        word-break: break-all;
+      }
+      td.url a {
+        color: #00c;
+      }
+      td.error {
+        color: #c00;
+      }
+      td.pending {
+        color: #aaa;
+      }
+      #json-section {
+        margin-top: 1.5rem;
+      }
+      #json-section h2 {
+        font-size: 0.9rem;
+        margin: 0 0 0.5rem;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+      }
+      #json-section pre {
+        background: #f6f6f6;
+        border: 1px solid #ddd;
+        padding: 0.75rem;
+        overflow: auto;
+        max-height: 360px;
+        font-size: 0.78rem;
+        margin: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Google Fonts SHA-256 Calculator</h1>
+    <p>
+      Fetches every font file referenced by the Google Fonts CSS URLs below and
+      computes its SHA-256 content hash — the value needed to look up or store
+      the file in Cross-Origin Storage.
+    </p>
+
+    <label for="css-urls">Google Fonts CSS URLs (one per line):</label>
+    <textarea id="css-urls" rows="4">https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap
+https://fonts.googleapis.com/css2?family=Doto:wght@100..900&family=Honk:MORF@15&display=swap</textarea>
+    <button id="run">Fetch &amp; calculate</button>
+
+    <div id="status"></div>
+    <div id="table-container"></div>
+    <div id="json-section"></div>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+
+      async function sha256Hex(buffer) {
+        const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+        return Array.from(new Uint8Array(hashBuffer), (b) =>
+          b.toString(16).padStart(2, '0')
+        ).join('');
+      }
+
+      // Returns deduplicated font file URLs from one Google Fonts CSS string.
+      function parseFontUrls(css) {
+        const urls = new Set();
+        const ruleRe = /@font-face\s*\{([^}]+)\}/g;
+        let m;
+        while ((m = ruleRe.exec(css)) !== null) {
+          const urlMatch = /url\(['"]?(https?:[^'")\s]+)['"]?\)/.exec(m[1]);
+          if (urlMatch) urls.add(urlMatch[1]);
+        }
+        return [...urls];
+      }
+
+      async function run() {
+        const cssUrls = $('css-urls')
+          .value.split('\n')
+          .map((s) => s.trim())
+          .filter(Boolean);
+
+        if (cssUrls.length === 0) return;
+
+        $('run').disabled = true;
+        $('status').textContent = `Fetching ${cssUrls.length} CSS stylesheet(s)…`;
+        $('table-container').innerHTML = '';
+        $('json-section').innerHTML = '';
+
+        // ── 1. Fetch all CSS, collect deduplicated font file URLs ──────────────
+        let fontUrls;
+        try {
+          const sheets = await Promise.all(
+            cssUrls.map(async (url) => {
+              const res = await fetch(url);
+              if (!res.ok)
+                throw new Error(`CSS fetch failed (${res.status}): ${url}`);
+              return res.text();
+            })
+          );
+          fontUrls = [...new Set(sheets.flatMap(parseFontUrls))];
+        } catch (e) {
+          $('status').textContent = `Error: ${e.message}`;
+          $('run').disabled = false;
+          return;
+        }
+
+        $('status').textContent = `Found ${fontUrls.length} font file(s). Fetching and hashing…`;
+
+        // ── 2. Build result table with one row per font URL ───────────────────
+        const table = document.createElement('table');
+        table.innerHTML = `<thead><tr>
+          <th>#</th>
+          <th>Filename</th>
+          <th>Size</th>
+          <th>SHA-256</th>
+          <th>URL</th>
+        </tr></thead>`;
+        const tbody = document.createElement('tbody');
+        table.appendChild(tbody);
+        $('table-container').appendChild(table);
+
+        // Pre-populate rows so ordering is stable while fetches arrive out of order.
+        const rows = fontUrls.map((url, i) => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${i + 1}</td>
+            <td>${url.split('/').pop()}</td>
+            <td class="pending">…</td>
+            <td class="pending">…</td>
+            <td class="url"><a href="${url}" target="_blank" rel="noreferrer">${url}</a></td>
+          `;
+          tbody.appendChild(tr);
+          return tr;
+        });
+
+        // ── 3. Fetch each font file and compute its SHA-256 ───────────────────
+        const hashMap = {};
+        let done = 0;
+
+        await Promise.all(
+          fontUrls.map(async (url, i) => {
+            const row = rows[i];
+            try {
+              const res = await fetch(url);
+              if (!res.ok) throw new Error(`HTTP ${res.status}`);
+              const buffer = await res.arrayBuffer();
+              const hash = await sha256Hex(buffer);
+              const kb = (buffer.byteLength / 1024).toFixed(1);
+
+              row.cells[2].textContent = `${kb} KB`;
+              row.cells[2].classList.remove('pending');
+              row.cells[3].textContent = hash;
+              row.cells[3].className = 'hash';
+              hashMap[url] = hash;
+            } catch (e) {
+              row.cells[2].textContent = '';
+              row.cells[2].classList.remove('pending');
+              row.cells[3].textContent = e.message;
+              row.cells[3].className = 'error';
+            }
+
+            done++;
+            $('status').textContent = `${done} / ${fontUrls.length} done…`;
+          })
+        );
+
+        $('status').textContent = `Done — ${fontUrls.length} file(s) processed.`;
+        renderJson(hashMap);
+        $('run').disabled = false;
+      }
+
+      function renderJson(hashMap) {
+        // Use the filename stem (last path segment without final extension) as a compact key.
+        // Stems are content-addressed and unique, so the full URL is redundant as a key.
+        const compact = {};
+        for (const [url, hash] of Object.entries(hashMap)) {
+          const stem = url.split('/').pop().replace(/\.[^.]+$/, '');
+          compact[stem] = hash;
+        }
+        const json = JSON.stringify(compact, null, 2);
+        const section = $('json-section');
+        section.innerHTML = `
+          <h2>
+            URL → SHA-256
+            <button id="copy-btn">Copy JSON</button>
+          </h2>
+          <pre id="json-pre">${json}</pre>
+        `;
+        $('copy-btn').addEventListener('click', () => {
+          navigator.clipboard.writeText($('json-pre').textContent).then(() => {
+            $('copy-btn').textContent = 'Copied!';
+            setTimeout(() => ($('copy-btn').textContent = 'Copy JSON'), 1500);
+          });
+        });
+      }
+
+      $('run').addEventListener('click', run);
+    </script>
+  </body>
+</html>
