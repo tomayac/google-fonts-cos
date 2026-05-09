@@ -223,7 +223,11 @@
           // Pre-computed hash is trusted; otherwise compute from content and cache it.
           const hash = precomputedHash ?? await sha256Hex(buffer);
           if (!precomputedHash) {
-            console.log(LOG, `  Content hash ${hash}`);
+            console.warn(
+              LOG,
+              `  No pre-computed hash for "${stem}" — computed from content.`,
+              `Re-run hash-calculator.html and update the hash map in the page.`
+            );
             lsSet('cos_fh:' + url, hash);
           }
 
