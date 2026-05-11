@@ -58,15 +58,6 @@
   }
   console.log(LOG, `Found ${cssUrls.length} Google Fonts CSS URL(s):`, cssUrls);
 
-  const hashMap = collectHashMap();
-  const hashMapSize = Object.keys(hashMap).length;
-  console.log(
-    LOG,
-    hashMapSize > 0
-      ? `Pre-computed hashes: ${hashMapSize} font file(s) — COS queries need no network fetch on hit`
-      : 'No pre-computed hashes found — will compute SHA-256 from content after download'
-  );
-
   // Progressive enhancement: only use COS path when the API is available.
   if (!('crossOriginStorage' in navigator)) {
     console.log(
@@ -76,9 +67,15 @@
     fallbackToGoogleFonts(cssUrls);
     return;
   }
+  console.log(LOG, 'crossOriginStorage available — using COS font loading path');
+
+  const hashMap = collectHashMap();
+  const hashMapSize = Object.keys(hashMap).length;
   console.log(
     LOG,
-    'crossOriginStorage available — using COS font loading path'
+    hashMapSize > 0
+      ? `Pre-computed hashes: ${hashMapSize} font file(s) — COS queries need no network fetch on hit`
+      : 'No pre-computed hashes found — will compute SHA-256 from content after download'
   );
 
   // Safe localStorage helpers — private browsing or quota errors must not abort font loading.
