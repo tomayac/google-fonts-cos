@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Google Fonts SHA-256 Calculator</title>
+    <title>Google Fonts COS Code Generator</title>
     <style>
       *,
       *::before,
@@ -89,17 +89,20 @@
       td.pending {
         color: #aaa;
       }
-      #json-section {
+      #output-section {
         margin-top: 1.5rem;
       }
-      #json-section h2 {
+      #output-section h2 {
         font-size: 0.9rem;
-        margin: 0 0 0.5rem;
+        margin: 1.25rem 0 0.5rem;
         display: flex;
         align-items: center;
         gap: 0.75rem;
       }
-      #json-section pre {
+      #output-section h2:first-child {
+        margin-top: 0;
+      }
+      #output-section pre {
         background: #f6f6f6;
         border: 1px solid #ddd;
         padding: 0.75rem;
@@ -111,21 +114,275 @@
     </style>
   </head>
   <body>
-    <h1>Google Fonts SHA-256 Calculator</h1>
+    <h1>Google Fonts COS Code Generator</h1>
     <p>
-      Fetches every font file referenced by the Google Fonts CSS URLs below and
-      computes its SHA-256 content hash — the value needed to look up or store
-      the file in Cross-Origin Storage.
+      Paste the embed code from the Google Fonts website. The tool fetches every
+      referenced font file, computes its SHA-256 content hash, and outputs
+      ready-to-use HTML: a <code>&lt;noscript&gt;</code> font block with
+      pre-computed hashes and the COS loader script that replaces the standard
+      Google Fonts <code>&lt;link&gt;</code> tags.
     </p>
 
-    <label for="css-urls">Google Fonts CSS URLs (one per line):</label>
-    <textarea id="css-urls" rows="4">https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap
-https://fonts.googleapis.com/css2?family=Doto:wght@100..900&family=Honk:MORF@15&display=swap</textarea>
-    <button id="run">Fetch &amp; calculate</button>
+    <label for="embed-code">Google Fonts embed code:</label>
+    <textarea id="embed-code" rows="5">&lt;link rel="preconnect" href="https://fonts.googleapis.com"&gt;
+&lt;link rel="preconnect" href="https://fonts.gstatic.com" crossorigin&gt;
+&lt;link href="https://fonts.googleapis.com/css2?family=Doto:wght@100..900&amp;family=Honk:MORF@15&amp;family=Noto+Color+Emoji&amp;display=swap" rel="stylesheet"&gt;</textarea>
+    <button id="run">Generate COS code</button>
 
     <div id="status"></div>
     <div id="table-container"></div>
-    <div id="json-section"></div>
+    <div id="output-section"></div>
+
+    <!--
+      COS loader IIFE stored as inert text so renderOutput() can retrieve it
+      via textContent without executing it on this page.
+    -->
+    <script type="text/plain" id="cos-loader">
+(async () => {
+  const LOG = '[COS Fonts]';
+
+  function collectCssUrls() {
+    const parser = new DOMParser();
+    const urls = new Set();
+    for (const ns of document.querySelectorAll('noscript[data-cos-fonts]')) {
+      const doc = parser.parseFromString(ns.innerHTML, 'text/html');
+      for (const link of doc.querySelectorAll('link[rel="stylesheet"]')) {
+        try {
+          if (new URL(link.href).hostname === 'fonts.googleapis.com')
+            urls.add(link.href);
+        } catch {}
+      }
+    }
+    return [...urls];
+  }
+
+  function collectHashMap() {
+    const parser = new DOMParser();
+    const map = {};
+    for (const ns of document.querySelectorAll('noscript[data-cos-fonts]')) {
+      const doc = parser.parseFromString(ns.innerHTML, 'text/html');
+      for (const script of doc.querySelectorAll(
+        'script[type="text/plain"][data-cos-fonts]'
+      )) {
+        try {
+          Object.assign(map, JSON.parse(script.textContent));
+        } catch {}
+      }
+    }
+    return map;
+  }
+
+  function fallbackToGoogleFonts(cssUrls) {
+    console.log(LOG, `Falling back: injecting ${cssUrls.length} <link> tag(s)`);
+    for (const url of cssUrls) {
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = url;
+      document.head.appendChild(link);
+    }
+  }
+
+  const cssUrls = collectCssUrls();
+  if (cssUrls.length === 0) {
+    console.log(LOG, 'No <noscript data-cos-fonts> blocks found — nothing to do');
+    return;
+  }
+  console.log(LOG, `Found ${cssUrls.length} Google Fonts CSS URL(s):`, cssUrls);
+
+  const hashMap = collectHashMap();
+  const hashMapSize = Object.keys(hashMap).length;
+  console.log(
+    LOG,
+    hashMapSize > 0
+      ? `Pre-computed hashes: ${hashMapSize} font file(s) — COS queries need no network fetch on hit`
+      : 'No pre-computed hashes found — will compute SHA-256 from content after download'
+  );
+
+  if (!('crossOriginStorage' in navigator)) {
+    console.log(
+      LOG,
+      'crossOriginStorage not available — falling back to Google Fonts <link>'
+    );
+    fallbackToGoogleFonts(cssUrls);
+    return;
+  }
+  console.log(LOG, 'crossOriginStorage available — using COS font loading path');
+
+  const lsGet = (key) => {
+    try { return localStorage.getItem(key); } catch { return null; }
+  };
+  const lsSet = (key, val) => {
+    try { localStorage.setItem(key, val); } catch {}
+  };
+
+  async function sha256Hex(buffer) {
+    const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+    return Array.from(new Uint8Array(hashBuffer), (b) =>
+      b.toString(16).padStart(2, '0')
+    ).join('');
+  }
+
+  async function getFromCOS(hash) {
+    try {
+      console.log(LOG, `  COS lookup   hash=${hash}`);
+      const [handle] = await navigator.crossOriginStorage.requestFileHandles([
+        { algorithm: 'SHA-256', value: hash },
+      ]);
+      const file = await handle.getFile();
+      console.log(LOG, `  COS hit      ${(file.size / 1024).toFixed(1)} KB`);
+      return file;
+    } catch (e) {
+      if (e.name === 'NotFoundError') {
+        console.log(LOG, `  COS miss     (not found or privacy-gated)`);
+        return null;
+      }
+      throw e;
+    }
+  }
+
+  async function storeInCOS(blob, hash) {
+    try {
+      console.log(
+        LOG,
+        `  COS store    hash=${hash} size=${(blob.size / 1024).toFixed(1)} KB origins=*`
+      );
+      const [handle] = await navigator.crossOriginStorage.requestFileHandles(
+        [{ algorithm: 'SHA-256', value: hash }],
+        { create: true, origins: '*' }
+      );
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      console.log(LOG, `  COS store    done`);
+    } catch (e) {
+      console.warn(LOG, `  COS store    failed: ${e.message}`);
+    }
+  }
+
+  async function fetchFontBlob(url) {
+    const stem = url.split('/').pop().replace(/\.[^.]+$/, '');
+    const precomputedHash = hashMap[stem];
+    const knownHash = precomputedHash ?? lsGet('cos_fh:' + url);
+
+    if (knownHash) {
+      console.log(
+        LOG,
+        precomputedHash
+          ? `  Pre-computed hash  ${knownHash}`
+          : `  Cached hash  ${knownHash}`
+      );
+      const file = await getFromCOS(knownHash);
+      if (file) return file;
+    }
+
+    console.log(LOG, `  Network fetch ${url}`);
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Fetch ${url} -> ${res.status}`);
+    const buffer = await res.arrayBuffer();
+    const type = res.headers.get('content-type') || 'font/woff2';
+    const blob = new Blob([buffer], { type });
+    console.log(LOG, `  Network fetch done  ${(blob.size / 1024).toFixed(1)} KB`);
+
+    const hash = precomputedHash ?? await sha256Hex(buffer);
+    if (!precomputedHash) {
+      console.warn(
+        LOG,
+        `  No pre-computed hash for "${stem}" — computed from content.`,
+        `Re-run hash-calculator.html and update the hash map in the page.`
+      );
+      lsSet('cos_fh:' + url, hash);
+    }
+
+    storeInCOS(blob, hash);
+    return blob;
+  }
+
+  function parseFontFaces(css) {
+    const faces = [];
+    const ruleRe = /@font-face\s*\{([^}]+)\}/g;
+    let m;
+    while ((m = ruleRe.exec(css)) !== null) {
+      const block = m[1];
+      const get = (re) => { const r = re.exec(block); return r ? r[1].trim() : null; };
+      const family = get(/font-family:\s*['"]([^'"]+)['"]/);
+      const url = get(/url\(['"]?(https?:[^'")\s]+)['"]?\)/);
+      if (!family || !url) continue;
+      faces.push({
+        family,
+        style: get(/font-style:\s*([^;]+)/) || 'normal',
+        weight: get(/font-weight:\s*([^;]+)/) || '400',
+        unicodeRange: get(/unicode-range:\s*([^;]+)/),
+        url,
+      });
+    }
+    return faces;
+  }
+
+  async function getFontFaceDescriptors(cssUrl) {
+    const cacheKey = 'cos_font_css_v1:' + cssUrl;
+    const cached = lsGet(cacheKey);
+    if (cached) {
+      try {
+        const faces = JSON.parse(cached);
+        console.log(
+          LOG,
+          `CSS descriptors from localStorage: ${cssUrl} (${faces.length} faces)`
+        );
+        return faces;
+      } catch {}
+    }
+    console.log(LOG, `Fetching Google Fonts CSS: ${cssUrl}`);
+    const res = await fetch(cssUrl);
+    if (!res.ok) throw new Error(`CSS fetch -> ${res.status}`);
+    const css = await res.text();
+    const faces = parseFontFaces(css);
+    console.log(LOG, `CSS parsed: ${faces.length} @font-face rules found in ${cssUrl}`);
+    lsSet(cacheKey, JSON.stringify(faces));
+    return faces;
+  }
+
+  try {
+    const allFaces = (
+      await Promise.all(cssUrls.map(getFontFaceDescriptors))
+    ).flat();
+    console.log(LOG, `Loading ${allFaces.length} font faces total...`);
+
+    const results = await Promise.allSettled(
+      allFaces.map(async (face) => {
+        const label = `${face.family} weight=${face.weight} style=${face.style}${face.unicodeRange ? ' unicode=' + face.unicodeRange.slice(0, 20) + '...' : ''}`;
+        console.log(`${LOG} ${label}`);
+        try {
+          const blob = await fetchFontBlob(face.url);
+          const blobUrl = URL.createObjectURL(blob);
+          const descriptors = {
+            style: face.style,
+            weight: face.weight,
+            display: 'swap',
+          };
+          if (face.unicodeRange) descriptors.unicodeRange = face.unicodeRange;
+          const ff = new FontFace(face.family, `url(${blobUrl})`, descriptors);
+          await ff.load();
+          document.fonts.add(ff);
+          console.log(LOG, `  FontFace loaded and added to document.fonts`);
+        } catch (e) {
+          console.warn(LOG, `  Failed: ${e.message}`);
+          throw e;
+        }
+      })
+    );
+
+    const loaded = results.filter((r) => r.status === 'fulfilled').length;
+    const failed = results.length - loaded;
+    console.log(
+      LOG,
+      `Done: ${loaded} faces loaded${failed ? `, ${failed} failed` : ''}`
+    );
+  } catch (e) {
+    console.warn(LOG, 'Falling back to Google Fonts:', e.message);
+    fallbackToGoogleFonts(cssUrls);
+  }
+})();
+    </script>
 
     <script>
       const $ = (id) => document.getElementById(id);
@@ -135,6 +392,28 @@ https://fonts.googleapis.com/css2?family=Doto:wght@100..900&family=Honk:MORF@15&
         return Array.from(new Uint8Array(hashBuffer), (b) =>
           b.toString(16).padStart(2, '0')
         ).join('');
+      }
+
+      // Parses the Google Fonts embed code and returns preconnect link descriptors
+      // and Google Fonts CSS URLs found in <link rel="stylesheet"> tags.
+      function parseEmbedCode(html) {
+        const doc = new DOMParser().parseFromString(html, 'text/html');
+        const preconnects = [...doc.querySelectorAll('link[rel="preconnect"]')].map(
+          (l) => ({
+            href: l.getAttribute('href'),
+            crossorigin: l.hasAttribute('crossorigin'),
+          })
+        );
+        const cssUrls = [...doc.querySelectorAll('link[rel="stylesheet"]')]
+          .map((l) => l.getAttribute('href'))
+          .filter((href) => {
+            try {
+              return new URL(href).hostname === 'fonts.googleapis.com';
+            } catch {
+              return false;
+            }
+          });
+        return { preconnects, cssUrls };
       }
 
       // Returns deduplicated font file URLs from one Google Fonts CSS string.
@@ -149,18 +428,25 @@ https://fonts.googleapis.com/css2?family=Doto:wght@100..900&family=Honk:MORF@15&
         return [...urls];
       }
 
-      async function run() {
-        const cssUrls = $('css-urls')
-          .value.split('\n')
-          .map((s) => s.trim())
-          .filter(Boolean);
+      function escapeAttr(s) {
+        return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+      }
 
-        if (cssUrls.length === 0) return;
+      async function run() {
+        const embedHtml = $('embed-code').value.trim();
+        if (!embedHtml) return;
+
+        const { preconnects, cssUrls } = parseEmbedCode(embedHtml);
+        if (cssUrls.length === 0) {
+          $('status').textContent =
+            'No Google Fonts stylesheet link found in the embed code.';
+          return;
+        }
 
         $('run').disabled = true;
         $('status').textContent = `Fetching ${cssUrls.length} CSS stylesheet(s)…`;
         $('table-container').innerHTML = '';
-        $('json-section').innerHTML = '';
+        $('output-section').innerHTML = '';
 
         // ── 1. Fetch all CSS, collect deduplicated font file URLs ──────────────
         let fontUrls;
@@ -241,33 +527,81 @@ https://fonts.googleapis.com/css2?family=Doto:wght@100..900&family=Honk:MORF@15&
         );
 
         $('status').textContent = `Done — ${fontUrls.length} file(s) processed.`;
-        renderJson(hashMap);
+        renderOutput(preconnects, cssUrls, hashMap);
         $('run').disabled = false;
       }
 
-      function renderJson(hashMap) {
-        // Use the filename stem (last path segment without final extension) as a compact key.
-        // Stems are content-addressed and unique, so the full URL is redundant as a key.
+      function renderOutput(preconnects, cssUrls, hashMap) {
+        // Build compact stem-keyed hash map (stems are content-addressed and unique).
         const compact = {};
         for (const [url, hash] of Object.entries(hashMap)) {
           const stem = url.split('/').pop().replace(/\.[^.]+$/, '');
           compact[stem] = hash;
         }
-        const json = JSON.stringify(compact, null, 2);
-        const section = $('json-section');
-        section.innerHTML = `
-          <h2>
-            URL → SHA-256
-            <button id="copy-btn">Copy JSON</button>
-          </h2>
-          <pre id="json-pre">${json}</pre>
-        `;
-        $('copy-btn').addEventListener('click', () => {
-          navigator.clipboard.writeText($('json-pre').textContent).then(() => {
-            $('copy-btn').textContent = 'Copied!';
-            setTimeout(() => ($('copy-btn').textContent = 'Copy JSON'), 1500);
+
+        // ── Font block ────────────────────────────────────────────────────────
+        const preconnectLines = preconnects
+          .map(
+            (p) =>
+              `<link rel="preconnect" href="${escapeAttr(p.href)}"${p.crossorigin ? ' crossorigin' : ''}>`
+          )
+          .join('\n');
+
+        const linkLines = cssUrls
+          .map((url) => `  <link href="${escapeAttr(url)}" rel="stylesheet">`)
+          .join('\n');
+
+        const jsonIndented = JSON.stringify(compact, null, 2)
+          .split('\n')
+          .map((l) => '    ' + l)
+          .join('\n');
+
+        // '</scr' + 'ipt>' avoids the HTML parser terminating this script tag.
+        const closingScript = '</' + 'script>';
+        const fontBlock = [
+          preconnectLines,
+          '<noscript data-cos-fonts>',
+          linkLines,
+          '  <script type="text/plain" data-cos-fonts>',
+          jsonIndented,
+          '  ' + closingScript,
+          '</noscript>',
+        ]
+          .filter(Boolean)
+          .join('\n');
+
+        // ── Loader script ─────────────────────────────────────────────────────
+        const loaderSrc = $('cos-loader').textContent.trim();
+        const loaderBlock =
+          '<script>\n' + loaderSrc + '\n' + closingScript;
+
+        // ── Render ────────────────────────────────────────────────────────────
+        const section = $('output-section');
+
+        function makeBlock(headingText, id, content) {
+          const h2 = document.createElement('h2');
+          h2.textContent = headingText;
+
+          const copyBtn = document.createElement('button');
+          copyBtn.textContent = 'Copy';
+          copyBtn.addEventListener('click', () => {
+            navigator.clipboard.writeText(content).then(() => {
+              copyBtn.textContent = 'Copied!';
+              setTimeout(() => (copyBtn.textContent = 'Copy'), 1500);
+            });
           });
-        });
+          h2.appendChild(copyBtn);
+
+          const pre = document.createElement('pre');
+          pre.id = id;
+          pre.textContent = content;
+
+          section.appendChild(h2);
+          section.appendChild(pre);
+        }
+
+        makeBlock('Font block — paste in <head>, once per font set', 'font-block-pre', fontBlock);
+        makeBlock('COS loader script — paste in <head> once per page', 'loader-pre', loaderBlock);
       }
 
       $('run').addEventListener('click', run);
