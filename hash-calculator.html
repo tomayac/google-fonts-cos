@@ -94,20 +94,17 @@
       }
       #output-section h2 {
         font-size: 0.9rem;
-        margin: 1.25rem 0 0.5rem;
+        margin: 0 0 0.5rem;
         display: flex;
         align-items: center;
         gap: 0.75rem;
-      }
-      #output-section h2:first-child {
-        margin-top: 0;
       }
       #output-section pre {
         background: #f6f6f6;
         border: 1px solid #ddd;
         padding: 0.75rem;
         overflow: auto;
-        max-height: 360px;
+        max-height: 480px;
         font-size: 0.78rem;
         margin: 0;
       }
@@ -117,10 +114,9 @@
     <h1>Google Fonts COS Code Generator</h1>
     <p>
       Paste the embed code from the Google Fonts website. The tool fetches every
-      referenced font file, computes its SHA-256 content hash, and outputs
-      ready-to-use HTML: a <code>&lt;noscript&gt;</code> font block with
-      pre-computed hashes and the COS loader script that replaces the standard
-      Google Fonts <code>&lt;link&gt;</code> tags.
+      referenced font file, computes its SHA-256 content hash, and outputs a
+      single ready-to-paste snippet: a <code>&lt;noscript&gt;</code> font block
+      with pre-computed hashes and the minified COS loader script.
     </p>
 
     <label for="embed-code">Google Fonts embed code:</label>
@@ -133,258 +129,22 @@
     <div id="table-container"></div>
     <div id="output-section"></div>
 
-    <!--
-      COS loader IIFE stored as inert text so renderOutput() can retrieve it
-      via textContent without executing it on this page.
-    -->
-    <script type="text/plain" id="cos-loader">
-(async () => {
-  const LOG = '[COS Fonts]';
+    <script type="module">
+      // esbuild-wasm is loaded lazily on the first run. Pin the version so the
+      // JS module and WASM file always match. Update both strings together.
+      const ESBUILD_VERSION = '0.25.4';
+      const ESBUILD_BASE = `https://unpkg.com/esbuild-wasm@${ESBUILD_VERSION}`;
 
-  function collectCssUrls() {
-    const parser = new DOMParser();
-    const urls = new Set();
-    for (const ns of document.querySelectorAll('noscript[data-cos-fonts]')) {
-      const doc = parser.parseFromString(ns.innerHTML, 'text/html');
-      for (const link of doc.querySelectorAll('link[rel="stylesheet"]')) {
-        try {
-          if (new URL(link.href).hostname === 'fonts.googleapis.com')
-            urls.add(link.href);
-        } catch {}
+      let esbuild = null;
+
+      async function getEsbuild() {
+        if (esbuild) return esbuild;
+        const mod = await import(`${ESBUILD_BASE}/esm/browser.js`);
+        await mod.initialize({ wasmURL: `${ESBUILD_BASE}/esbuild.wasm`, worker: false });
+        esbuild = mod;
+        return esbuild;
       }
-    }
-    return [...urls];
-  }
 
-  function collectHashMap() {
-    const parser = new DOMParser();
-    const map = {};
-    for (const ns of document.querySelectorAll('noscript[data-cos-fonts]')) {
-      const doc = parser.parseFromString(ns.innerHTML, 'text/html');
-      for (const script of doc.querySelectorAll(
-        'script[type="text/plain"][data-cos-fonts]'
-      )) {
-        try {
-          Object.assign(map, JSON.parse(script.textContent));
-        } catch {}
-      }
-    }
-    return map;
-  }
-
-  function fallbackToGoogleFonts(cssUrls) {
-    console.log(LOG, `Falling back: injecting ${cssUrls.length} <link> tag(s)`);
-    for (const url of cssUrls) {
-      const link = document.createElement('link');
-      link.rel = 'stylesheet';
-      link.href = url;
-      document.head.appendChild(link);
-    }
-  }
-
-  const cssUrls = collectCssUrls();
-  if (cssUrls.length === 0) {
-    console.log(LOG, 'No <noscript data-cos-fonts> blocks found — nothing to do');
-    return;
-  }
-  console.log(LOG, `Found ${cssUrls.length} Google Fonts CSS URL(s):`, cssUrls);
-
-  const hashMap = collectHashMap();
-  const hashMapSize = Object.keys(hashMap).length;
-  console.log(
-    LOG,
-    hashMapSize > 0
-      ? `Pre-computed hashes: ${hashMapSize} font file(s) — COS queries need no network fetch on hit`
-      : 'No pre-computed hashes found — will compute SHA-256 from content after download'
-  );
-
-  if (!('crossOriginStorage' in navigator)) {
-    console.log(
-      LOG,
-      'crossOriginStorage not available — falling back to Google Fonts <link>'
-    );
-    fallbackToGoogleFonts(cssUrls);
-    return;
-  }
-  console.log(LOG, 'crossOriginStorage available — using COS font loading path');
-
-  const lsGet = (key) => {
-    try { return localStorage.getItem(key); } catch { return null; }
-  };
-  const lsSet = (key, val) => {
-    try { localStorage.setItem(key, val); } catch {}
-  };
-
-  async function sha256Hex(buffer) {
-    const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
-    return Array.from(new Uint8Array(hashBuffer), (b) =>
-      b.toString(16).padStart(2, '0')
-    ).join('');
-  }
-
-  async function getFromCOS(hash) {
-    try {
-      console.log(LOG, `  COS lookup   hash=${hash}`);
-      const [handle] = await navigator.crossOriginStorage.requestFileHandles([
-        { algorithm: 'SHA-256', value: hash },
-      ]);
-      const file = await handle.getFile();
-      console.log(LOG, `  COS hit      ${(file.size / 1024).toFixed(1)} KB`);
-      return file;
-    } catch (e) {
-      if (e.name === 'NotFoundError') {
-        console.log(LOG, `  COS miss     (not found or privacy-gated)`);
-        return null;
-      }
-      throw e;
-    }
-  }
-
-  async function storeInCOS(blob, hash) {
-    try {
-      console.log(
-        LOG,
-        `  COS store    hash=${hash} size=${(blob.size / 1024).toFixed(1)} KB origins=*`
-      );
-      const [handle] = await navigator.crossOriginStorage.requestFileHandles(
-        [{ algorithm: 'SHA-256', value: hash }],
-        { create: true, origins: '*' }
-      );
-      const writable = await handle.createWritable();
-      await writable.write(blob);
-      await writable.close();
-      console.log(LOG, `  COS store    done`);
-    } catch (e) {
-      console.warn(LOG, `  COS store    failed: ${e.message}`);
-    }
-  }
-
-  async function fetchFontBlob(url) {
-    const stem = url.split('/').pop().replace(/\.[^.]+$/, '');
-    const precomputedHash = hashMap[stem];
-    const knownHash = precomputedHash ?? lsGet('cos_fh:' + url);
-
-    if (knownHash) {
-      console.log(
-        LOG,
-        precomputedHash
-          ? `  Pre-computed hash  ${knownHash}`
-          : `  Cached hash  ${knownHash}`
-      );
-      const file = await getFromCOS(knownHash);
-      if (file) return file;
-    }
-
-    console.log(LOG, `  Network fetch ${url}`);
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`Fetch ${url} -> ${res.status}`);
-    const buffer = await res.arrayBuffer();
-    const type = res.headers.get('content-type') || 'font/woff2';
-    const blob = new Blob([buffer], { type });
-    console.log(LOG, `  Network fetch done  ${(blob.size / 1024).toFixed(1)} KB`);
-
-    const hash = precomputedHash ?? await sha256Hex(buffer);
-    if (!precomputedHash) {
-      console.warn(
-        LOG,
-        `  No pre-computed hash for "${stem}" — computed from content.`,
-        `Re-run hash-calculator.html and update the hash map in the page.`
-      );
-      lsSet('cos_fh:' + url, hash);
-    }
-
-    storeInCOS(blob, hash);
-    return blob;
-  }
-
-  function parseFontFaces(css) {
-    const faces = [];
-    const ruleRe = /@font-face\s*\{([^}]+)\}/g;
-    let m;
-    while ((m = ruleRe.exec(css)) !== null) {
-      const block = m[1];
-      const get = (re) => { const r = re.exec(block); return r ? r[1].trim() : null; };
-      const family = get(/font-family:\s*['"]([^'"]+)['"]/);
-      const url = get(/url\(['"]?(https?:[^'")\s]+)['"]?\)/);
-      if (!family || !url) continue;
-      faces.push({
-        family,
-        style: get(/font-style:\s*([^;]+)/) || 'normal',
-        weight: get(/font-weight:\s*([^;]+)/) || '400',
-        unicodeRange: get(/unicode-range:\s*([^;]+)/),
-        url,
-      });
-    }
-    return faces;
-  }
-
-  async function getFontFaceDescriptors(cssUrl) {
-    const cacheKey = 'cos_font_css_v1:' + cssUrl;
-    const cached = lsGet(cacheKey);
-    if (cached) {
-      try {
-        const faces = JSON.parse(cached);
-        console.log(
-          LOG,
-          `CSS descriptors from localStorage: ${cssUrl} (${faces.length} faces)`
-        );
-        return faces;
-      } catch {}
-    }
-    console.log(LOG, `Fetching Google Fonts CSS: ${cssUrl}`);
-    const res = await fetch(cssUrl);
-    if (!res.ok) throw new Error(`CSS fetch -> ${res.status}`);
-    const css = await res.text();
-    const faces = parseFontFaces(css);
-    console.log(LOG, `CSS parsed: ${faces.length} @font-face rules found in ${cssUrl}`);
-    lsSet(cacheKey, JSON.stringify(faces));
-    return faces;
-  }
-
-  try {
-    const allFaces = (
-      await Promise.all(cssUrls.map(getFontFaceDescriptors))
-    ).flat();
-    console.log(LOG, `Loading ${allFaces.length} font faces total...`);
-
-    const results = await Promise.allSettled(
-      allFaces.map(async (face) => {
-        const label = `${face.family} weight=${face.weight} style=${face.style}${face.unicodeRange ? ' unicode=' + face.unicodeRange.slice(0, 20) + '...' : ''}`;
-        console.log(`${LOG} ${label}`);
-        try {
-          const blob = await fetchFontBlob(face.url);
-          const blobUrl = URL.createObjectURL(blob);
-          const descriptors = {
-            style: face.style,
-            weight: face.weight,
-            display: 'swap',
-          };
-          if (face.unicodeRange) descriptors.unicodeRange = face.unicodeRange;
-          const ff = new FontFace(face.family, `url(${blobUrl})`, descriptors);
-          await ff.load();
-          document.fonts.add(ff);
-          console.log(LOG, `  FontFace loaded and added to document.fonts`);
-        } catch (e) {
-          console.warn(LOG, `  Failed: ${e.message}`);
-          throw e;
-        }
-      })
-    );
-
-    const loaded = results.filter((r) => r.status === 'fulfilled').length;
-    const failed = results.length - loaded;
-    console.log(
-      LOG,
-      `Done: ${loaded} faces loaded${failed ? `, ${failed} failed` : ''}`
-    );
-  } catch (e) {
-    console.warn(LOG, 'Falling back to Google Fonts:', e.message);
-    fallbackToGoogleFonts(cssUrls);
-  }
-})();
-    </script>
-
-    <script>
       const $ = (id) => document.getElementById(id);
 
       async function sha256Hex(buffer) {
@@ -481,7 +241,6 @@
         table.appendChild(tbody);
         $('table-container').appendChild(table);
 
-        // Pre-populate rows so ordering is stable while fetches arrive out of order.
         const rows = fontUrls.map((url, i) => {
           const tr = document.createElement('tr');
           tr.innerHTML = `
@@ -526,12 +285,35 @@
           })
         );
 
+        // ── 4. Load esbuild + fetch loader source + minify ────────────────────
+        $('status').textContent = 'Minifying loader script…';
+        let minifiedLoader;
+        try {
+          const [eb, loaderSrc] = await Promise.all([
+            getEsbuild(),
+            fetch('cos-loader.js').then((r) => {
+              if (!r.ok) throw new Error(`cos-loader.js fetch failed (${r.status})`);
+              return r.text();
+            }),
+          ]);
+          const { code } = await eb.transform(loaderSrc, {
+            loader: 'js',
+            minify: true,
+            target: 'es2020',
+          });
+          minifiedLoader = code.trim();
+        } catch (e) {
+          $('status').textContent = `Minification failed: ${e.message}`;
+          $('run').disabled = false;
+          return;
+        }
+
         $('status').textContent = `Done — ${fontUrls.length} file(s) processed.`;
-        renderOutput(preconnects, cssUrls, hashMap);
+        renderOutput(preconnects, cssUrls, hashMap, minifiedLoader);
         $('run').disabled = false;
       }
 
-      function renderOutput(preconnects, cssUrls, hashMap) {
+      function renderOutput(preconnects, cssUrls, hashMap, minifiedLoader) {
         // Build compact stem-keyed hash map (stems are content-addressed and unique).
         const compact = {};
         for (const [url, hash] of Object.entries(hashMap)) {
@@ -539,7 +321,6 @@
           compact[stem] = hash;
         }
 
-        // ── Font block ────────────────────────────────────────────────────────
         const preconnectLines = preconnects
           .map(
             (p) =>
@@ -556,52 +337,44 @@
           .map((l) => '    ' + l)
           .join('\n');
 
-        // '</scr' + 'ipt>' avoids the HTML parser terminating this script tag.
-        const closingScript = '</' + 'script>';
-        const fontBlock = [
+        // Split '</s' + 'cript>' to prevent the HTML parser from closing this <script> tag.
+        const closeTag = '</' + 'script>';
+
+        const output = [
           preconnectLines,
           '<noscript data-cos-fonts>',
           linkLines,
           '  <script type="text/plain" data-cos-fonts>',
           jsonIndented,
-          '  ' + closingScript,
+          '  ' + closeTag,
           '</noscript>',
+          '<script>',
+          minifiedLoader,
+          closeTag,
         ]
           .filter(Boolean)
           .join('\n');
 
-        // ── Loader script ─────────────────────────────────────────────────────
-        const loaderSrc = $('cos-loader').textContent.trim();
-        const loaderBlock =
-          '<script>\n' + loaderSrc + '\n' + closingScript;
-
-        // ── Render ────────────────────────────────────────────────────────────
         const section = $('output-section');
 
-        function makeBlock(headingText, id, content) {
-          const h2 = document.createElement('h2');
-          h2.textContent = headingText;
+        const h2 = document.createElement('h2');
+        h2.textContent = 'Paste in <head>';
 
-          const copyBtn = document.createElement('button');
-          copyBtn.textContent = 'Copy';
-          copyBtn.addEventListener('click', () => {
-            navigator.clipboard.writeText(content).then(() => {
-              copyBtn.textContent = 'Copied!';
-              setTimeout(() => (copyBtn.textContent = 'Copy'), 1500);
-            });
+        const copyBtn = document.createElement('button');
+        copyBtn.textContent = 'Copy';
+        copyBtn.addEventListener('click', () => {
+          navigator.clipboard.writeText(output).then(() => {
+            copyBtn.textContent = 'Copied!';
+            setTimeout(() => (copyBtn.textContent = 'Copy'), 1500);
           });
-          h2.appendChild(copyBtn);
+        });
+        h2.appendChild(copyBtn);
 
-          const pre = document.createElement('pre');
-          pre.id = id;
-          pre.textContent = content;
+        const pre = document.createElement('pre');
+        pre.textContent = output;
 
-          section.appendChild(h2);
-          section.appendChild(pre);
-        }
-
-        makeBlock('Font block — paste in <head>, once per font set', 'font-block-pre', fontBlock);
-        makeBlock('COS loader script — paste in <head> once per page', 'loader-pre', loaderBlock);
+        section.appendChild(h2);
+        section.appendChild(pre);
       }
 
       $('run').addEventListener('click', run);
