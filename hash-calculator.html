@@ -302,12 +302,17 @@
               return r.text();
             }),
           ]);
-          // Replace the collectHashMap() call with the literal object so esbuild
-          // can minify the map inline and dead-code-eliminate collectHashMap().
-          const injectedSrc = loaderSrc.replace(
-            'const hashMap = collectHashMap();',
-            `const hashMap = ${JSON.stringify(compact)};`
-          );
+          // Replace the collectHashMap() call with the literal object, then
+          // strip the now-dead function body between the build-remove markers.
+          const injectedSrc = loaderSrc
+            .replace(
+              'const hashMap = collectHashMap();',
+              `const hashMap = ${JSON.stringify(compact)};`
+            )
+            .replace(
+              /\n[ \t]*\/\/ #build-remove-start[\s\S]*?\/\/ #build-remove-end[ \t]*\n/,
+              '\n'
+            );
           const { code } = await eb.transform(injectedSrc, {
             loader: 'js',
             minify: true,

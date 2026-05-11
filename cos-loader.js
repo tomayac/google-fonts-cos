@@ -18,6 +18,7 @@
     return [...urls];
   }
 
+  // #build-remove-start — collectHashMap is replaced by the injected literal at build time.
   // Collect the pre-computed stem→SHA-256 map from every
   // <script type="text/plain" data-cos-fonts> inside <noscript data-cos-fonts> blocks.
   function collectHashMap() {
@@ -35,6 +36,7 @@
     }
     return map;
   }
+  // #build-remove-end
 
   function fallbackToGoogleFonts(cssUrls) {
     console.log(LOG, `Falling back: injecting ${cssUrls.length} <link> tag(s)`);
