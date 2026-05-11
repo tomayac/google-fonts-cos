@@ -285,7 +285,13 @@
           })
         );
 
-        // ── 4. Load esbuild + fetch loader source + minify ────────────────────
+        // ── 4. Build compact map, inject into loader source, minify ──────────
+        const compact = {};
+        for (const [url, hash] of Object.entries(hashMap)) {
+          const stem = url.split('/').pop().replace(/\.[^.]+$/, '');
+          compact[stem] = hash;
+        }
+
         $('status').textContent = 'Minifying loader script…';
         let minifiedLoader;
         try {
@@ -296,7 +302,13 @@
               return r.text();
             }),
           ]);
-          const { code } = await eb.transform(loaderSrc, {
+          // Replace the collectHashMap() call with the literal object so esbuild
+          // can minify the map inline and dead-code-eliminate collectHashMap().
+          const injectedSrc = loaderSrc.replace(
+            'const hashMap = collectHashMap();',
+            `const hashMap = ${JSON.stringify(compact)};`
+          );
+          const { code } = await eb.transform(injectedSrc, {
             loader: 'js',
             minify: true,
             target: 'es2020',
@@ -309,18 +321,11 @@
         }
 
         $('status').textContent = `Done — ${fontUrls.length} file(s) processed.`;
-        renderOutput(preconnects, cssUrls, hashMap, minifiedLoader);
+        renderOutput(preconnects, cssUrls, minifiedLoader);
         $('run').disabled = false;
       }
 
-      function renderOutput(preconnects, cssUrls, hashMap, minifiedLoader) {
-        // Build compact stem-keyed hash map (stems are content-addressed and unique).
-        const compact = {};
-        for (const [url, hash] of Object.entries(hashMap)) {
-          const stem = url.split('/').pop().replace(/\.[^.]+$/, '');
-          compact[stem] = hash;
-        }
-
+      function renderOutput(preconnects, cssUrls, minifiedLoader) {
         const preconnectLines = preconnects
           .map(
             (p) =>
@@ -332,11 +337,6 @@
           .map((url) => `  <link href="${escapeAttr(url)}" rel="stylesheet">`)
           .join('\n');
 
-        const jsonIndented = JSON.stringify(compact, null, 2)
-          .split('\n')
-          .map((l) => '    ' + l)
-          .join('\n');
-
         // Split '</s' + 'cript>' to prevent the HTML parser from closing this <script> tag.
         const closeTag = '</' + 'script>';
 
@@ -344,9 +344,6 @@
           preconnectLines,
           '<noscript data-cos-fonts>',
           linkLines,
-          '  <script type="text/plain" data-cos-fonts>',
-          jsonIndented,
-          '  ' + closeTag,
           '</noscript>',
           '<script>',
           minifiedLoader,
