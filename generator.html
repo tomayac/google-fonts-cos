@@ -209,6 +209,16 @@
         return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
       }
 
+      function stripTextParam(url) {
+        try {
+          const u = new URL(url);
+          u.searchParams.delete('text');
+          return u.toString();
+        } catch {
+          return url;
+        }
+      }
+
       async function run() {
         const embedHtml = $('embed-code').value.trim();
         if (!embedHtml) return;
@@ -228,9 +238,11 @@
         // ── 1. Fetch all CSS, collect deduplicated font file URLs ──────────────
         let fontUrls;
         try {
+          // Strip text= before fetching: the COS path always caches the full
+          // (unsubsetted) font. The noscript <link> tags keep text= intact.
           const sheets = await Promise.all(
             cssUrls.map(async (url) => {
-              const res = await fetch(url);
+              const res = await fetch(stripTextParam(url));
               if (!res.ok)
                 throw new Error(`CSS fetch failed (${res.status}): ${url}`);
               return res.text();

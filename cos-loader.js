@@ -189,6 +189,18 @@
     return blob;
   }
 
+  // Strip text= so COS always caches the full (unsubsetted) font.
+  // The noscript fallback <link> keeps text= for browsers that don't use COS.
+  function stripTextParam(url) {
+    try {
+      const u = new URL(url);
+      u.searchParams.delete('text');
+      return u.toString();
+    } catch {
+      return url;
+    }
+  }
+
   // Parses @font-face rules from a Google Fonts CSS response.
   // Extracts the first https: URL per block (modern browsers always receive woff2).
   function parseFontFaces(css) {
@@ -206,8 +218,10 @@
       if (!family || !url) continue;
       faces.push({
         family,
-        style: get(/font-style:\s*([^;]+)/) || 'normal',
-        weight: get(/font-weight:\s*([^;]+)/) || '400',
+        style:        get(/font-style:\s*([^;]+)/)   || 'normal',
+        weight:       get(/font-weight:\s*([^;]+)/)  || '400',
+        stretch:      get(/font-stretch:\s*([^;]+)/),
+        display:      get(/font-display:\s*([^;]+)/) || 'swap',
         unicodeRange: get(/unicode-range:\s*([^;]+)/),
         url,
       });
@@ -216,28 +230,30 @@
   }
 
   // Fetches and caches the @font-face descriptors for one CSS URL in localStorage.
+  // Strips text= before fetching so the full font is always used on the COS path.
   // Repeat visits skip the network request entirely for each URL.
   async function getFontFaceDescriptors(cssUrl) {
-    const cacheKey = 'cos_font_css_v1:' + cssUrl;
+    const fetchUrl = stripTextParam(cssUrl);
+    const cacheKey = 'cos_font_css_v1:' + fetchUrl;
     const cached = lsGet(cacheKey);
     if (cached) {
       try {
         const faces = JSON.parse(cached);
         console.log(
           LOG,
-          `CSS descriptors from localStorage: ${cssUrl} (${faces.length} faces)`
+          `CSS descriptors from localStorage: ${fetchUrl} (${faces.length} faces)`
         );
         return faces;
       } catch {}
     }
-    console.log(LOG, `Fetching Google Fonts CSS: ${cssUrl}`);
-    const res = await fetch(cssUrl);
+    console.log(LOG, `Fetching Google Fonts CSS: ${fetchUrl}`);
+    const res = await fetch(fetchUrl);
     if (!res.ok) throw new Error(`CSS fetch → ${res.status}`);
     const css = await res.text();
     const faces = parseFontFaces(css);
     console.log(
       LOG,
-      `CSS parsed: ${faces.length} @font-face rules found in ${cssUrl}`
+      `CSS parsed: ${faces.length} @font-face rules found in ${fetchUrl}`
     );
     lsSet(cacheKey, JSON.stringify(faces));
     return faces;
@@ -258,12 +274,12 @@
           const blob = await fetchFontBlob(face.url);
           const blobUrl = URL.createObjectURL(blob);
           const descriptors = {
-            style: face.style,
-            weight: face.weight,
-            display: 'swap',
+            style:   face.style,
+            weight:  face.weight,
+            display: face.display,
           };
-          if (face.unicodeRange)
-            descriptors.unicodeRange = face.unicodeRange;
+          if (face.stretch)      descriptors.stretch      = face.stretch;
+          if (face.unicodeRange) descriptors.unicodeRange = face.unicodeRange;
           const ff = new FontFace(
             face.family,
             `url(${blobUrl})`,

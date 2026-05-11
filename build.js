@@ -35,7 +35,7 @@ try {
   });
   page.on('pageerror', (err) => console.error(`[page error] ${err.message}`));
 
-  console.log('Opening hash-calculator.html…');
+  console.log('Opening generator.html…');
   await page.goto(calcUrl, { waitUntil: 'load' });
 
   // Serve cos-loader.js from disk so the file:// origin restriction doesn't
