@@ -4,6 +4,6 @@
     "build": "node build.js"
   },
   "dependencies": {
-    "puppeteer": "^22.0.0"
+    "puppeteer": "^24.15.0"
   }
 }
