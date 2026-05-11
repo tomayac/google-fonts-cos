@@ -272,7 +272,10 @@
         console.log(`${LOG} ${label}`);
         try {
           const blob = await fetchFontBlob(face.url);
-          const blobUrl = URL.createObjectURL(blob);
+          // Pass the font data as an ArrayBuffer rather than a blob: URL.
+          // blob: URLs require an explicit font-src blob: in the CSP, whereas
+          // binary data passed directly to FontFace bypasses font-src entirely.
+          const buffer = await blob.arrayBuffer();
           const descriptors = {
             style:   face.style,
             weight:  face.weight,
@@ -280,11 +283,7 @@
           };
           if (face.stretch)      descriptors.stretch      = face.stretch;
           if (face.unicodeRange) descriptors.unicodeRange = face.unicodeRange;
-          const ff = new FontFace(
-            face.family,
-            `url(${blobUrl})`,
-            descriptors
-          );
+          const ff = new FontFace(face.family, buffer, descriptors);
           await ff.load();
           document.fonts.add(ff);
           console.log(LOG, `  FontFace loaded and added to document.fonts`);
