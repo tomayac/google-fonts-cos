@@ -113,10 +113,12 @@
   <body>
     <h1>Google Fonts COS Code Generator</h1>
     <p>
-      Paste the embed code from the Google Fonts website. The tool fetches every
-      referenced font file, computes its SHA-256 content hash, and outputs a
-      single ready-to-paste snippet: a <code>&lt;noscript&gt;</code> font block
-      with pre-computed hashes and the minified COS loader script.
+      Paste the embed code from the Google Fonts website — either the
+      <code>&lt;link&gt;</code> or the <code>@import</code> variant. The tool
+      fetches every referenced font file, computes its SHA-256 content hash,
+      and outputs a single ready-to-paste snippet: a
+      <code>&lt;noscript&gt;</code> font block with pre-computed hashes and the
+      minified COS loader script.
     </p>
 
     <label for="embed-code">Google Fonts embed code:</label>
@@ -154,26 +156,41 @@
         ).join('');
       }
 
-      // Parses the Google Fonts embed code and returns preconnect link descriptors
-      // and Google Fonts CSS URLs found in <link rel="stylesheet"> tags.
+      // Parses the Google Fonts embed code (both <link> and @import variants)
+      // and returns preconnect link descriptors and Google Fonts CSS URLs.
       function parseEmbedCode(html) {
         const doc = new DOMParser().parseFromString(html, 'text/html');
+
         const preconnects = [...doc.querySelectorAll('link[rel="preconnect"]')].map(
-          (l) => ({
-            href: l.getAttribute('href'),
-            crossorigin: l.hasAttribute('crossorigin'),
-          })
+          (l) => ({ href: l.getAttribute('href'), crossorigin: l.hasAttribute('crossorigin') })
         );
-        const cssUrls = [...doc.querySelectorAll('link[rel="stylesheet"]')]
-          .map((l) => l.getAttribute('href'))
-          .filter((href) => {
-            try {
-              return new URL(href).hostname === 'fonts.googleapis.com';
-            } catch {
-              return false;
-            }
-          });
-        return { preconnects, cssUrls };
+
+        // The @import variant omits preconnect tags; add the standard ones.
+        if (preconnects.length === 0) {
+          preconnects.push(
+            { href: 'https://fonts.googleapis.com', crossorigin: false },
+            { href: 'https://fonts.gstatic.com', crossorigin: true }
+          );
+        }
+
+        const cssUrls = new Set();
+
+        // <link rel="stylesheet" href="https://fonts.googleapis.com/…"> variant
+        for (const l of doc.querySelectorAll('link[rel="stylesheet"]')) {
+          const href = l.getAttribute('href');
+          try {
+            if (new URL(href).hostname === 'fonts.googleapis.com') cssUrls.add(href);
+          } catch {}
+        }
+
+        // <style>@import url('https://fonts.googleapis.com/…');</style> variant
+        const importRe = /@import\s+url\(['"]?(https?:\/\/fonts\.googleapis\.com[^'")\s]+)['"]?\)/g;
+        for (const style of doc.querySelectorAll('style')) {
+          let m;
+          while ((m = importRe.exec(style.textContent)) !== null) cssUrls.add(m[1]);
+        }
+
+        return { preconnects, cssUrls: [...cssUrls] };
       }
 
       // Returns deduplicated font file URLs from one Google Fonts CSS string.

@@ -21,7 +21,7 @@ const INJECT_RE =
   /<!-- COS demo -->[\s\S]*?<!-- \/COS demo -->|<!-- COS demo marker -->/;
 
 const indexPath  = resolve(__dirname, 'index.html');
-const calcUrl    = `file://${resolve(__dirname, 'hash-calculator.html')}`;
+const calcUrl    = `file://${resolve(__dirname, 'generator.html')}`;
 const loaderSrc  = readFileSync(resolve(__dirname, 'cos-loader.js'), 'utf8');
 
 console.log('Launching browser…');
