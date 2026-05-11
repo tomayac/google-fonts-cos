@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Google Fonts COS Code Generator</title>
     <style>
       *,
@@ -115,16 +115,18 @@
     <p>
       Paste the embed code from the Google Fonts website — either the
       <code>&lt;link&gt;</code> or the <code>@import</code> variant. The tool
-      fetches every referenced font file, computes its SHA-256 content hash,
-      and outputs a single ready-to-paste snippet: a
+      fetches every referenced font file, computes its SHA-256 content hash, and
+      outputs a single ready-to-paste snippet: a
       <code>&lt;noscript&gt;</code> font block with pre-computed hashes and the
       minified COS loader script.
     </p>
 
     <label for="embed-code">Google Fonts embed code:</label>
-    <textarea id="embed-code" rows="5">&lt;link rel="preconnect" href="https://fonts.googleapis.com"&gt;
+    <textarea id="embed-code" rows="5">
+&lt;link rel="preconnect" href="https://fonts.googleapis.com"&gt;
 &lt;link rel="preconnect" href="https://fonts.gstatic.com" crossorigin&gt;
-&lt;link href="https://fonts.googleapis.com/css2?family=Doto:wght@100..900&amp;family=Honk:MORF@15&amp;family=Noto+Color+Emoji&amp;display=swap" rel="stylesheet"&gt;</textarea>
+&lt;link href="https://fonts.googleapis.com/css2?family=Doto:wght@100..900&amp;family=Honk:MORF@15&amp;family=Noto+Color+Emoji&amp;display=swap" rel="stylesheet"&gt;</textarea
+    >
     <button id="run">Generate COS code</button>
 
     <div id="status"></div>
@@ -142,7 +144,10 @@
       async function getEsbuild() {
         if (esbuild) return esbuild;
         const mod = await import(`${ESBUILD_BASE}/esm/browser.js`);
-        await mod.initialize({ wasmURL: `${ESBUILD_BASE}/esbuild.wasm`, worker: false });
+        await mod.initialize({
+          wasmURL: `${ESBUILD_BASE}/esbuild.wasm`,
+          worker: false,
+        });
         esbuild = mod;
         return esbuild;
       }
@@ -161,9 +166,12 @@
       function parseEmbedCode(html) {
         const doc = new DOMParser().parseFromString(html, 'text/html');
 
-        const preconnects = [...doc.querySelectorAll('link[rel="preconnect"]')].map(
-          (l) => ({ href: l.getAttribute('href'), crossorigin: l.hasAttribute('crossorigin') })
-        );
+        const preconnects = [
+          ...doc.querySelectorAll('link[rel="preconnect"]'),
+        ].map((l) => ({
+          href: l.getAttribute('href'),
+          crossorigin: l.hasAttribute('crossorigin'),
+        }));
 
         // The @import variant omits preconnect tags; add the standard ones.
         if (preconnects.length === 0) {
@@ -179,15 +187,18 @@
         for (const l of doc.querySelectorAll('link[rel="stylesheet"]')) {
           const href = l.getAttribute('href');
           try {
-            if (new URL(href).hostname === 'fonts.googleapis.com') cssUrls.add(href);
+            if (new URL(href).hostname === 'fonts.googleapis.com')
+              cssUrls.add(href);
           } catch {}
         }
 
         // <style>@import url('https://fonts.googleapis.com/…');</style> variant
-        const importRe = /@import\s+url\(['"]?(https?:\/\/fonts\.googleapis\.com[^'")\s]+)['"]?\)/g;
+        const importRe =
+          /@import\s+url\(['"]?(https?:\/\/fonts\.googleapis\.com[^'")\s]+)['"]?\)/g;
         for (const style of doc.querySelectorAll('style')) {
           let m;
-          while ((m = importRe.exec(style.textContent)) !== null) cssUrls.add(m[1]);
+          while ((m = importRe.exec(style.textContent)) !== null)
+            cssUrls.add(m[1]);
         }
 
         return { preconnects, cssUrls: [...cssUrls] };
@@ -231,7 +242,8 @@
         }
 
         $('run').disabled = true;
-        $('status').textContent = `Fetching ${cssUrls.length} CSS stylesheet(s)…`;
+        $('status').textContent =
+          `Fetching ${cssUrls.length} CSS stylesheet(s)…`;
         $('table-container').innerHTML = '';
         $('output-section').innerHTML = '';
 
@@ -255,7 +267,8 @@
           return;
         }
 
-        $('status').textContent = `Found ${fontUrls.length} font file(s). Fetching and hashing…`;
+        $('status').textContent =
+          `Found ${fontUrls.length} font file(s). Fetching and hashing…`;
 
         // ── 2. Build result table with one row per font URL ───────────────────
         const table = document.createElement('table');
@@ -317,7 +330,10 @@
         // ── 4. Build compact map, inject into loader source, minify ──────────
         const compact = {};
         for (const [url, hash] of Object.entries(hashMap)) {
-          const stem = url.split('/').pop().replace(/\.[^.]+$/, '');
+          const stem = url
+            .split('/')
+            .pop()
+            .replace(/\.[^.]+$/, '');
           compact[stem] = hash;
         }
 
@@ -327,7 +343,8 @@
           const [eb, loaderSrc] = await Promise.all([
             getEsbuild(),
             fetch('cos-loader.js').then((r) => {
-              if (!r.ok) throw new Error(`cos-loader.js fetch failed (${r.status})`);
+              if (!r.ok)
+                throw new Error(`cos-loader.js fetch failed (${r.status})`);
               return r.text();
             }),
           ]);
@@ -354,7 +371,8 @@
           return;
         }
 
-        $('status').textContent = `Done — ${fontUrls.length} file(s) processed.`;
+        $('status').textContent =
+          `Done — ${fontUrls.length} file(s) processed.`;
         renderOutput(preconnects, cssUrls, minifiedLoader);
         $('run').disabled = false;
       }

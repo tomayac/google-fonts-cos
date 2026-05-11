@@ -50,7 +50,10 @@
 
   const cssUrls = collectCssUrls();
   if (cssUrls.length === 0) {
-    console.log(LOG, 'No <noscript data-cos-fonts> blocks found — nothing to do');
+    console.log(
+      LOG,
+      'No <noscript data-cos-fonts> blocks found — nothing to do'
+    );
     return;
   }
   console.log(LOG, `Found ${cssUrls.length} Google Fonts CSS URL(s):`, cssUrls);
@@ -73,7 +76,10 @@
     fallbackToGoogleFonts(cssUrls);
     return;
   }
-  console.log(LOG, 'crossOriginStorage available — using COS font loading path');
+  console.log(
+    LOG,
+    'crossOriginStorage available — using COS font loading path'
+  );
 
   // Safe localStorage helpers — private browsing or quota errors must not abort font loading.
   const lsGet = (key) => {
@@ -100,10 +106,9 @@
   async function getFromCOS(hash) {
     try {
       console.log(LOG, `  COS lookup   hash=${hash}`);
-      const [handle] =
-        await navigator.crossOriginStorage.requestFileHandles([
-          { algorithm: 'SHA-256', value: hash },
-        ]);
+      const [handle] = await navigator.crossOriginStorage.requestFileHandles([
+        { algorithm: 'SHA-256', value: hash },
+      ]);
       const file = await handle.getFile();
       console.log(LOG, `  COS hit      ${(file.size / 1024).toFixed(1)} KB`);
       return file;
@@ -124,11 +129,10 @@
         LOG,
         `  COS store    hash=${hash} size=${(blob.size / 1024).toFixed(1)} KB origins=*`
       );
-      const [handle] =
-        await navigator.crossOriginStorage.requestFileHandles(
-          [{ algorithm: 'SHA-256', value: hash }],
-          { create: true, origins: '*' }
-        );
+      const [handle] = await navigator.crossOriginStorage.requestFileHandles(
+        [{ algorithm: 'SHA-256', value: hash }],
+        { create: true, origins: '*' }
+      );
       const writable = await handle.createWritable();
       await writable.write(blob);
       await writable.close();
@@ -148,7 +152,10 @@
   // Once the hash is known, COS is queried. On a miss the file is fetched (if not
   // already downloaded in step 3) and stored in COS for future cross-origin reuse.
   async function fetchFontBlob(url) {
-    const stem = url.split('/').pop().replace(/\.[^.]+$/, '');
+    const stem = url
+      .split('/')
+      .pop()
+      .replace(/\.[^.]+$/, '');
     const precomputedHash = hashMap[stem];
     const knownHash = precomputedHash ?? lsGet('cos_fh:' + url);
 
@@ -170,10 +177,13 @@
     const buffer = await res.arrayBuffer();
     const type = res.headers.get('content-type') || 'font/woff2';
     const blob = new Blob([buffer], { type });
-    console.log(LOG, `  Network fetch done  ${(blob.size / 1024).toFixed(1)} KB`);
+    console.log(
+      LOG,
+      `  Network fetch done  ${(blob.size / 1024).toFixed(1)} KB`
+    );
 
     // Pre-computed hash is trusted; otherwise compute from content and cache it.
-    const hash = precomputedHash ?? await sha256Hex(buffer);
+    const hash = precomputedHash ?? (await sha256Hex(buffer));
     if (!precomputedHash) {
       console.warn(
         LOG,
@@ -218,10 +228,10 @@
       if (!family || !url) continue;
       faces.push({
         family,
-        style:        get(/font-style:\s*([^;]+)/)   || 'normal',
-        weight:       get(/font-weight:\s*([^;]+)/)  || '400',
-        stretch:      get(/font-stretch:\s*([^;]+)/),
-        display:      get(/font-display:\s*([^;]+)/) || 'swap',
+        style: get(/font-style:\s*([^;]+)/) || 'normal',
+        weight: get(/font-weight:\s*([^;]+)/) || '400',
+        stretch: get(/font-stretch:\s*([^;]+)/),
+        display: get(/font-display:\s*([^;]+)/) || 'swap',
         unicodeRange: get(/unicode-range:\s*([^;]+)/),
         url,
       });
@@ -277,11 +287,11 @@
           // binary data passed directly to FontFace bypasses font-src entirely.
           const buffer = await blob.arrayBuffer();
           const descriptors = {
-            style:   face.style,
-            weight:  face.weight,
+            style: face.style,
+            weight: face.weight,
             display: face.display,
           };
-          if (face.stretch)      descriptors.stretch      = face.stretch;
+          if (face.stretch) descriptors.stretch = face.stretch;
           if (face.unicodeRange) descriptors.unicodeRange = face.unicodeRange;
           const ff = new FontFace(face.family, buffer, descriptors);
           await ff.load();

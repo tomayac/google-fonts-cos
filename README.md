@@ -4,9 +4,10 @@ A proof-of-concept that serves Google Fonts from the browser's
 [Cross-Origin Storage (COS)](https://github.com/wicg/cross-origin-storage) API
 instead of downloading them from `fonts.googleapis.com` on every site visit.
 
-Once a font file has been fetched by *any* site that uses this loader, subsequent
-visits from *any other* site that also uses this loader get the file straight from
-the local COS cache — no network round-trip, no Google server involved.
+Once a font file has been fetched by _any_ site that uses this loader,
+subsequent visits from _any other_ site that also uses this loader get the file
+straight from the local COS cache — no network round-trip, no Google server
+involved.
 
 ## How it works
 
@@ -16,8 +17,8 @@ the local COS cache — no network round-trip, no Google server involved.
    hashes for every font file.
 2. On page load the script checks for `navigator.crossOriginStorage`. If the API
    is absent it falls back gracefully by injecting the original `<link>` tags.
-3. When COS is available the loader fetches the Google Fonts CSS, looks each font
-   file up in COS by its SHA-256 hash, and registers it with the
+3. When COS is available the loader fetches the Google Fonts CSS, looks each
+   font file up in COS by its SHA-256 hash, and registers it with the
    [CSS Font Loading API](https://developer.mozilla.org/en-US/docs/Web/API/FontFace).
    On a cache miss it fetches the file from Google, stores it in COS for
    cross-origin reuse, and still applies the font this session.
@@ -28,9 +29,8 @@ the local COS cache — no network round-trip, no Google server involved.
 ## Live demo
 
 Two independently hosted origins both use the same loader and the same
-pre-computed hashes. Load either page first to warm the COS cache, then
-load the other — the fonts on the second page are served entirely from local
-storage.
+pre-computed hashes. Load either page first to warm the COS cache, then load the
+other — the fonts on the second page are served entirely from COS storage.
 
 - **GitHub Pages:** <https://tomayac.github.io/google-fonts-cos/>
 - **Independent origin:** <https://google-fonts-cos-tomayac.yoyo.codes/>
@@ -49,14 +49,13 @@ Source: <https://github.com/web-ai-community/cross-origin-storage-extension>
 ### Steps
 
 1. Install the extension from the Chrome Web Store link above.
-2. Open the first demo origin:
-   <https://tomayac.github.io/google-fonts-cos/>
-   The page loads the fonts from Google Fonts and stores them in COS.
+2. Open the first demo origin: <https://tomayac.github.io/google-fonts-cos/> The
+   page loads the fonts from Google Fonts and stores them in COS.
 3. Click the extension icon to inspect which font files were stored and from
    which origin.
-4. Open the second demo origin:
-   <https://google-fonts-cos-tomayac.yoyo.codes/>
-   This time the fonts are served from COS — no request reaches `fonts.gstatic.com`.
+4. Open the second demo origin: <https://google-fonts-cos-tomayac.yoyo.codes/>
+   This time the fonts are served from COS — no request reaches
+   `fonts.gstatic.com`.
 5. Check the browser console for `[COS Fonts]` log lines confirming cache hits.
 
 You can open the two origins in either order; the one loaded second always
@@ -65,16 +64,19 @@ benefits from the COS cache populated by the first.
 ## Generator
 
 The hosted generator at
-**<https://tomayac.github.io/google-fonts-cos/generator.html>**
-turns any Google Fonts embed snippet into a ready-to-paste COS block.
+**<https://tomayac.github.io/google-fonts-cos/generator.html>** turns any Google
+Fonts embed snippet into a ready-to-paste COS block.
 
 **Supports both embed variants:**
 
 ```html
 <!-- <link> variant -->
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link
+  href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap"
+  rel="stylesheet"
+/>
 ```
 
 ```css
@@ -108,12 +110,12 @@ npm run build   # writes the <!-- COS demo --> block into index.html
 
 ## Repository layout
 
-| File | Purpose |
-|---|---|
-| `cos-loader.js` | Source of the COS loader IIFE (unminified, with build markers) |
-| `generator.html` | Browser-based embed code generator |
-| `build.js` | Puppeteer script that regenerates `index.html` |
-| `index.html` | Demo page with the generated COS block |
+| File             | Purpose                                                        |
+| ---------------- | -------------------------------------------------------------- |
+| `cos-loader.js`  | Source of the COS loader IIFE (unminified, with build markers) |
+| `generator.html` | Browser-based embed code generator                             |
+| `build.js`       | Puppeteer script that regenerates `index.html`                 |
+| `index.html`     | Demo page with the generated COS block                         |
 
 ## Background
 
