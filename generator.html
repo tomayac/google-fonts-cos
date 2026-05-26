@@ -50,6 +50,18 @@
         opacity: 0.5;
         cursor: default;
       }
+      .variant-selector {
+        margin: 0.6rem 0 0.5rem;
+        display: flex;
+        gap: 1.5rem;
+      }
+      .variant-selector label {
+        display: flex;
+        align-items: baseline;
+        gap: 0.3rem;
+        margin: 0;
+        cursor: pointer;
+      }
       #status {
         margin: 0.75rem 0 0;
         font-size: 0.85rem;
@@ -127,6 +139,16 @@
 &lt;link rel="preconnect" href="https://fonts.gstatic.com" crossorigin&gt;
 &lt;link href="https://fonts.googleapis.com/css2?family=Doto:wght@100..900&amp;family=Honk:MORF@15&amp;family=Noto+Color+Emoji&amp;display=swap" rel="stylesheet"&gt;</textarea
     >
+    <div class="variant-selector">
+      <label>
+        <input type="radio" name="variant" id="variant-static" value="static" checked>
+        Static — pre-compute SHA-256 hashes (fastest load; regenerate when fonts update)
+      </label>
+      <label>
+        <input type="radio" name="variant" id="variant-dynamic" value="dynamic">
+        Dynamic — no hash map; re-fetches CSS every 24 h to pick up version-bumped font URLs
+      </label>
+    </div>
     <button id="run">Generate COS code</button>
 
     <div id="status"></div>
@@ -242,10 +264,45 @@
         }
 
         $('run').disabled = true;
-        $('status').textContent =
-          `Fetching ${cssUrls.length} CSS stylesheet(s)…`;
         $('table-container').innerHTML = '';
         $('output-section').innerHTML = '';
+
+        const variant = document.querySelector('input[name="variant"]:checked').value;
+        if (variant === 'dynamic') {
+          await runDynamic(preconnects, cssUrls);
+        } else {
+          await runStatic(preconnects, cssUrls);
+        }
+
+        $('run').disabled = false;
+      }
+
+      async function runDynamic(preconnects, cssUrls) {
+        $('status').textContent = 'Minifying dynamic loader script…';
+        try {
+          const [eb, loaderSrc] = await Promise.all([
+            getEsbuild(),
+            fetch('cos-loader-dynamic.js').then((r) => {
+              if (!r.ok)
+                throw new Error(`cos-loader-dynamic.js fetch failed (${r.status})`);
+              return r.text();
+            }),
+          ]);
+          const { code } = await eb.transform(loaderSrc, {
+            loader: 'js',
+            minify: true,
+            target: 'es2020',
+          });
+          $('status').textContent = 'Done.';
+          renderOutput(preconnects, cssUrls, code.trim());
+        } catch (e) {
+          $('status').textContent = `Minification failed: ${e.message}`;
+        }
+      }
+
+      async function runStatic(preconnects, cssUrls) {
+        $('status').textContent =
+          `Fetching ${cssUrls.length} CSS stylesheet(s)…`;
 
         // ── 1. Fetch all CSS, collect deduplicated font file URLs ──────────────
         let fontUrls;
@@ -263,7 +320,6 @@
           fontUrls = [...new Set(sheets.flatMap(parseFontUrls))];
         } catch (e) {
           $('status').textContent = `Error: ${e.message}`;
-          $('run').disabled = false;
           return;
         }
 
@@ -338,13 +394,12 @@
         }
 
         $('status').textContent = 'Minifying loader script…';
-        let minifiedLoader;
         try {
           const [eb, loaderSrc] = await Promise.all([
             getEsbuild(),
-            fetch('cos-loader.js').then((r) => {
+            fetch('cos-loader-static.js').then((r) => {
               if (!r.ok)
-                throw new Error(`cos-loader.js fetch failed (${r.status})`);
+                throw new Error(`cos-loader-static.js fetch failed (${r.status})`);
               return r.text();
             }),
           ]);
@@ -364,17 +419,12 @@
             minify: true,
             target: 'es2020',
           });
-          minifiedLoader = code.trim();
+          $('status').textContent =
+            `Done — ${fontUrls.length} file(s) processed.`;
+          renderOutput(preconnects, cssUrls, code.trim());
         } catch (e) {
           $('status').textContent = `Minification failed: ${e.message}`;
-          $('run').disabled = false;
-          return;
         }
-
-        $('status').textContent =
-          `Done — ${fontUrls.length} file(s) processed.`;
-        renderOutput(preconnects, cssUrls, minifiedLoader);
-        $('run').disabled = false;
       }
 
       function renderOutput(preconnects, cssUrls, minifiedLoader) {

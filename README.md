@@ -9,22 +9,164 @@ subsequent visits from _any other_ site that also uses this loader get the file
 straight from the local COS cache — no network round-trip, no Google server
 involved.
 
-## How it works
+## Two loader variants
 
-1. The page embeds a `<noscript data-cos-fonts>` block containing the standard
-   Google Fonts `<link>` tags (used as a no-JS/no-COS fallback) and a tiny
-   inline `<script>` with the minified COS loader and pre-computed SHA-256
-   hashes for every font file.
-2. On page load the script checks for `navigator.crossOriginStorage`. If the API
-   is absent it falls back gracefully by injecting the original `<link>` tags.
-3. When COS is available the loader fetches the Google Fonts CSS, looks each
-   font file up in COS by its SHA-256 hash, and registers it with the
-   [CSS Font Loading API](https://developer.mozilla.org/en-US/docs/Web/API/FontFace).
-   On a cache miss it fetches the file from Google, stores it in COS for
-   cross-origin reuse, and still applies the font this session.
-4. Font data is passed as an `ArrayBuffer` directly to `FontFace` — no `blob:`
-   URL is created, so the loader works under strict Content Security Policies
-   that do not include `font-src blob:`.
+Two variants of the loader are provided. Both share the same HTML structure — a
+`<noscript data-cos-fonts>` block with the original Google Fonts `<link>` tags
+as a no-JS / no-COS fallback, and a small inline `<script>` — but they differ
+in how they map font files to their SHA-256 hashes.
+
+### Static loader (`cos-loader-static.js`)
+
+A build step (the generator) fetches every referenced font file, computes its
+SHA-256 hash, and bakes a `stem → hash` map directly into the minified script.
+COS lookups on every subsequent page load use that map without touching the
+network.
+
+**Pros**
+- Fastest possible warm start: the hash is known before any I/O begins, so a
+  single COS lookup is all that stands between the user and the font.
+- No SHA-256 computation at runtime — the hash is a string literal.
+- The CSS descriptor list (`@font-face` rules) is also cached in `localStorage`
+  indefinitely, eliminating the CSS fetch on all but the very first visit.
+
+**Cons**
+- The embedded hash map is a snapshot taken at build time. If Google updates a
+  font file the baked-in hashes become stale and the page will silently keep
+  serving the old version from COS (or re-fetch the old URL from Google).
+- Picking up an update requires running the generator again and redeploying.
+
+### Dynamic loader (`cos-loader-dynamic.js`)
+
+No hash map is baked in. Instead, font file hashes are computed on first use
+and cached in `localStorage` keyed by the full versioned URL
+(e.g. `cos_fh:https://fonts.gstatic.com/s/inter/v13/…`). The Google Fonts CSS
+is re-fetched according to the `Cache-Control` headers in Google's own response
+(`max-age=86400, stale-while-revalidate=604800` as of writing), so no TTL is
+hardcoded. Version-bumped font URLs (e.g. `/v13/` → `/v14/`) are discovered
+automatically when the CSS is refreshed.
+
+**Pros**
+- Self-updating: a font revision is picked up within one `max-age` window plus
+  one page load, with no rebuild or redeploy needed.
+- Font file URLs from Google Fonts already embed a version string that changes
+  with every revision, so a changed URL means a different `localStorage` key —
+  the new version is fetched and re-hashed automatically.
+
+**Cons**
+- The first-ever visit (cold start) must fetch and hash every font file before
+  it can be registered.
+- A stale CSS cache means the current visit may use slightly old `@font-face`
+  descriptors (updated versions land on the _next_ visit).
+
+---
+
+## Algorithm walkthrough
+
+Google Fonts font file URLs carry a version segment that changes whenever
+Google revises a font:
+
+```
+https://fonts.gstatic.com/s/inter/v13/<content-hash>.woff2
+                                  ^^^
+```
+
+Both loaders use this property. The key difference is **when** the hash of
+each file is known: the static loader knows it at build time; the dynamic
+loader discovers it at runtime and caches it.
+
+All font data is passed as an `ArrayBuffer` directly to the
+[CSS Font Loading API](https://developer.mozilla.org/en-US/docs/Web/API/FontFace)
+— no `blob:` URL is created, so both loaders work under strict Content Security
+Policies that do not include `font-src blob:`.
+
+### Static loader
+
+#### Cold start — first ever visit
+
+1. Parse `<noscript data-cos-fonts>` → extract Google Fonts CSS URL(s).
+2. `localStorage` miss for `cos_font_css_v1:{url}` → fetch CSS from
+   `fonts.googleapis.com`, parse `@font-face` rules, cache result
+   (no TTL — Google Fonts CSS for a given query is stable).
+3. For each font face **in parallel**:
+   a. Look up hash in the baked-in stem→hash map.
+   b. Query COS with that hash → miss.
+   c. Fetch font file from `fonts.gstatic.com`.
+   d. Store in COS (fire-and-forget); register `FontFace`.
+
+#### Warm start — subsequent visits
+
+1. Parse noscript → get CSS URL.
+2. `localStorage` hit for CSS descriptors → return immediately, no network.
+3. For each font face **in parallel**:
+   a. Look up hash in the baked-in map.
+   b. Query COS with that hash → hit → return file.
+   c. Register `FontFace`. **No network requests.**
+
+#### A font file is updated by Google
+
+Google increments the version segment and changes the file content
+(e.g. `/v13/` → `/v14/`). The CSS served by `fonts.googleapis.com` changes
+accordingly, but:
+
+- The CSS is cached in `localStorage` with no TTL → the loader keeps reading
+  the old `@font-face` rules with the old URL.
+- The old URL still resolves on Google's CDN (old versions remain accessible).
+- The baked-in hash still matches the old content → COS hit → **the old font
+  version is rendered indefinitely**.
+
+To pick up the update: run the generator against the current Google Fonts CSS,
+then redeploy the page.
+
+---
+
+### Dynamic loader
+
+#### Cold start — first ever visit
+
+1. Parse `<noscript data-cos-fonts>` → extract Google Fonts CSS URL(s).
+2. `localStorage` miss for `cos_font_css_dyn:{url}` → fetch CSS, parse
+   `@font-face` rules, cache with a timestamp.
+3. For each font face **in parallel**:
+   a. `localStorage` miss for `cos_fh:{versioned-url}` → no hash known yet.
+   b. Fetch font file from `fonts.gstatic.com`; return buffer immediately.
+   c. **Fire-and-forget:** compute SHA-256 → write hash to `localStorage` →
+      store file in COS for cross-origin reuse.
+   d. Register `FontFace` from the in-memory buffer while (c) runs in
+      the background.
+
+#### Warm start — subsequent visits
+
+1. Parse noscript → get CSS URL.
+2. `localStorage` hit, age < `max-age` → return faces immediately, no network.
+3. For each font face **in parallel**:
+   a. `localStorage` hit for `cos_fh:{versioned-url}` → hash known.
+   b. Query COS with that hash → hit → return file.
+   c. Register `FontFace`. **No network requests.**
+
+#### A font file is updated by Google
+
+Google increments the version segment (e.g. `/v13/` → `/v14/`), changing the
+URL in the Google Fonts CSS.
+
+- **CSS cache still fresh** (age < `max-age`): cached `@font-face` descriptors
+  still reference the old URL → old font file, served from COS or Google.
+- **CSS cache stale** (`max-age` ≤ age < `max-age + stale-while-revalidate`):
+  old faces are returned immediately so font loading starts now; a background
+  fetch updates `localStorage` with the new descriptors for the next visit.
+- **CSS cache expired** (age ≥ `max-age + stale-while-revalidate`): new CSS is
+  fetched synchronously before font loading begins; new descriptors cached.
+- **Next visit after CSS refresh**: the new versioned URL has no `localStorage`
+  entry → cold path for that file → font fetched from Google, hash cached,
+  file stored in COS.
+- **Visit after that**: COS hit on the new hash → no network.
+
+The update lands within one `max-age + stale-while-revalidate` window plus
+2 page loads of Google publishing it, with no rebuild or redeploy required.
+For Google Fonts' current headers (`max-age=86400, stale-while-revalidate=604800`)
+that is at most **8 days + 2 page loads**.
+
+---
 
 ## Live demo
 
@@ -49,14 +191,14 @@ Source: <https://github.com/web-ai-community/cross-origin-storage-extension>
 ### Steps
 
 1. Install the extension from the Chrome Web Store link above.
-2. Open the first demo origin: <https://tomayac.github.io/google-fonts-cos/> The
-   page loads the fonts from Google Fonts and stores them in COS.
+2. Open the demo index: <https://tomayac.github.io/google-fonts-cos/> and
+   choose a variant. The page loads the fonts from Google Fonts and stores them
+   in COS.
 3. Click the extension icon to inspect which font files were stored and from
    which origin.
 4. Open the second demo origin: <https://google-fonts-cos-tomayac.yoyo.codes/>
    This time the fonts are served from COS — no request reaches
    `fonts.gstatic.com`.
-5. Check the browser console for `[COS Fonts]` log lines confirming cache hits.
 
 You can open the two origins in either order; the one loaded second always
 benefits from the COS cache populated by the first.
@@ -64,8 +206,8 @@ benefits from the COS cache populated by the first.
 ## Generator
 
 The hosted generator at
-**<https://tomayac.github.io/google-fonts-cos/generator.html>** turns any Google
-Fonts embed snippet into a ready-to-paste COS block.
+**<https://tomayac.github.io/google-fonts-cos/generator.html>** turns any
+Google Fonts embed snippet into a ready-to-paste COS block.
 
 **Supports both embed variants:**
 
@@ -84,38 +226,46 @@ Fonts embed snippet into a ready-to-paste COS block.
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
 ```
 
-**What it does:**
+Select **Static** to pre-compute hashes (requires a rebuild on font updates) or
+**Dynamic** to skip hashing and rely on runtime discovery (no rebuild needed).
+
+**What the static path does:**
 
 1. Parses the embed code and extracts the Google Fonts CSS URL(s).
 2. Fetches every referenced font file and computes its SHA-256 content hash.
-3. Minifies the COS loader with [esbuild](https://esbuild.github.io/) (running
+3. Minifies `cos-loader-static.js` with [esbuild](https://esbuild.github.io/) (running
    entirely in the browser via esbuild-wasm) and bakes the hash map in.
-4. Outputs a single snippet to paste into your `<head>`:
-   - Standard `<link rel="preconnect">` tags
-   - A `<noscript data-cos-fonts>` block with the original `<link>` tags (no-JS
-     / no-COS fallback, including any `text=` subsetting parameters)
-   - A `<script>` tag with the self-contained, minified COS loader
+4. Outputs a ready-to-paste `<head>` snippet.
+
+**What the dynamic path does:**
+
+1. Parses the embed code and extracts the Google Fonts CSS URL(s).
+2. Minifies `cos-loader-dynamic.js` as-is — no font fetching, no hashing.
+3. Outputs the same snippet format; hashes are computed at runtime on first use.
 
 No server involved — everything runs in the browser.
 
-### Building `index.html` locally
+### Building the demo pages locally
 
-The demo `index.html` is generated by a Puppeteer build script that opens
-`generator.html` in headless Chrome and injects the output:
+The Puppeteer build script opens `generator.html` in headless Chrome, runs both
+variants, and injects the output into the two demo pages:
 
 ```bash
 npm install
-npm run build   # writes the <!-- COS demo --> block into index.html
+npm run build   # writes index-static.html and index-dynamic.html
 ```
 
 ## Repository layout
 
-| File             | Purpose                                                        |
-| ---------------- | -------------------------------------------------------------- |
-| `cos-loader.js`  | Source of the COS loader IIFE (unminified, with build markers) |
-| `generator.html` | Browser-based embed code generator                             |
-| `build.js`       | Puppeteer script that regenerates `index.html`                 |
-| `index.html`     | Demo page with the generated COS block                         |
+| File                    | Purpose                                                              |
+| ----------------------- | -------------------------------------------------------------------- |
+| `cos-loader-static.js`         | Static loader source (non-minified, with `#build-remove` markers)    |
+| `cos-loader-dynamic.js` | Dynamic loader source (non-minified, no hash map)                    |
+| `generator.html`        | Browser-based generator; produces static or dynamic embed code       |
+| `build.js`              | Puppeteer script that regenerates `index-static.html` and `index-dynamic.html` |
+| `index.html`            | Landing page linking to both demo variants                           |
+| `index-static.html`     | Demo page — static loader (pre-computed hashes, build-generated)     |
+| `index-dynamic.html`    | Demo page — dynamic loader (runtime hashing, build-generated)        |
 
 ## Background
 

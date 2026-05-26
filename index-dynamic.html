@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+    <!-- COS demo -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<noscript data-cos-fonts>
+  <link href="https://fonts.googleapis.com/css2?family=Doto:wght@100..900&amp;family=Honk:MORF@15&amp;family=Noto+Color+Emoji&amp;display=swap" rel="stylesheet">
+</noscript>
+<script>
+(async()=>{const g=new DOMParser,o=[...new Set([...document.querySelectorAll("noscript[data-cos-fonts]")].flatMap(e=>[...g.parseFromString(e.innerHTML,"text/html").querySelectorAll('link[rel="stylesheet"]')]).map(e=>e.href).filter(e=>{try{return new URL(e).hostname==="fonts.googleapis.com"}catch{return!1}}))];if(!o.length)return;const c=()=>{for(const e of o)document.head.append(Object.assign(document.createElement("link"),{rel:"stylesheet",href:e}))};if(!("crossOriginStorage"in navigator))return c();const i=e=>{try{return localStorage.getItem(e)}catch{return null}},l=(e,t)=>{try{localStorage.setItem(e,t)}catch{}},w=async e=>[...new Uint8Array(await crypto.subtle.digest("SHA-256",e))].map(t=>t.toString(16).padStart(2,"0")).join(""),y=async e=>{try{const[t]=await navigator.crossOriginStorage.requestFileHandles([{algorithm:"SHA-256",value:e}]);return await t.getFile()}catch(t){if(t.name==="NotFoundError")return null;throw t}},m=async(e,t)=>{try{const[a]=await navigator.crossOriginStorage.requestFileHandles([{algorithm:"SHA-256",value:t}],{create:!0,origins:"*"}),r=await a.createWritable();await r.write(e),await r.close()}catch{}},d=async e=>{const t=i("cos_fh:"+e);if(t){const n=await y(t);if(n)return n.arrayBuffer()}const a=await fetch(e);if(!a.ok)throw new Error(`Fetch ${e} \u2192 ${a.status}`);const r=await a.arrayBuffer(),s=a.headers.get("content-type")||"font/woff2";return(async()=>{const n=await w(r);l("cos_fh:"+e,n),m(new Blob([r],{type:s}),n)})(),r},p=[["family",/font-family:\s*['"]([^'"]+)['"]/],["style",/font-style:\s*([^;]+)/,"normal"],["weight",/font-weight:\s*([^;]+)/,"400"],["stretch",/font-stretch:\s*([^;]+)/],["display",/font-display:\s*([^;]+)/,"swap"],["unicodeRange",/unicode-range:\s*([^;]+)/],["url",/url\(['"]?(https?:[^'")\s]+)['"]?\)/]],S=e=>[...e.matchAll(/@font-face\s*\{([^}]+)\}/g)].map(t=>Object.fromEntries(p.map(([a,r,s])=>[a,t[1].match(r)?.[1].trim()??s]))).filter(t=>t.family&&t.url),F=e=>{const t=a=>{const r=a.exec(e??"");return r?+r[1]*1e3:null};return{maxAge:t(/\bmax-age=(\d+)/i)??864e5,swr:t(/\bstale-while-revalidate=(\d+)/i)??0}},h=async(e,t)=>{const a=await fetch(e);if(!a.ok)throw new Error(`CSS fetch \u2192 ${a.status}`);const r=S(await a.text()),{maxAge:s,swr:n}=F(a.headers.get("cache-control"));return l(t,JSON.stringify({faces:r,ts:Date.now(),maxAge:s,swr:n})),r},A=async e=>{let t=e;try{const s=new URL(e);s.searchParams.delete("text"),t=s.toString()}catch{}const a="cos_font_css_dyn:"+t,r=i(a);if(r)try{const{faces:s,ts:n,maxAge:f,swr:b}=JSON.parse(r),u=Date.now()-n;if(u<f)return s;if(u<f+b)return h(t,a).catch(()=>{}),s}catch{}return h(t,a)};try{const e=(await Promise.all(o.map(A))).flat();await Promise.allSettled(e.map(async t=>{const a=await d(t.url),r={style:t.style,weight:t.weight,display:t.display};t.stretch&&(r.stretch=t.stretch),t.unicodeRange&&(r.unicodeRange=t.unicodeRange);const s=new FontFace(t.family,a,r);await s.load(),document.fonts.add(s)}))}catch{c()}})();
+</script>
+<!-- /COS demo -->
+  </head>
+  <body>
+    <h1 style="font-family: 'Doto'">Hello, World!</h1>
+    <h1>Hello, World!</h1>
+
+    <div style="font-family: 'Noto Color Emoji'; font-size: 24px">
+      🥰💀✌️🌴🐢🐐🍄⚽🍻👑📸😬👀🚨🏡🕊️🏆😻🌟🧿🍀🎨🍜
+    </div>
+    <div style="font-size: 24px">
+      🥰💀✌️🌴🐢🐐🍄⚽🍻👑📸😬👀🚨🏡🕊️🏆😻🌟🧿🍀🎨🍜
+    </div>
+
+    <p style="font-family: 'Honk'">Lorem ipsum</p>
+    <p>Lorem ipsum</p>
+
+    <footer style="margin-top:3rem;font-family:monospace;font-size:0.8rem;color:#888">
+      <button id="clear-btn">Clear local cache &amp; reload</button>
+      <span id="clear-info" style="margin-left:0.5rem"></span>
+    </footer>
+    <script>
+      document.getElementById('clear-btn').addEventListener('click', () => {
+        let n = 0;
+        for (const k of Object.keys(localStorage)) {
+          if (k.startsWith('cos_')) { localStorage.removeItem(k); n++; }
+        }
+        document.getElementById('clear-info').textContent =
+          `${n} entr${n === 1 ? 'y' : 'ies'} removed`;
+        location.reload();
+      });
+    </script>
+  </body>
+</html>
