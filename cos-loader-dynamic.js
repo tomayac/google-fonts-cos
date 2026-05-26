@@ -12,28 +12,53 @@
 
   const parser = new DOMParser();
 
-  const cssUrls = [...new Set(
-    [...document.querySelectorAll('noscript[data-cos-fonts]')]
-      .flatMap((ns) => [...parser.parseFromString(ns.innerHTML, 'text/html').querySelectorAll('link[rel="stylesheet"]')])
-      .map((l) => l.href)
-      .filter((h) => {
-        try { return new URL(h).hostname === 'fonts.googleapis.com'; } catch { return false; }
-      })
-  )];
+  const cssUrls = [
+    ...new Set(
+      [...document.querySelectorAll('noscript[data-cos-fonts]')]
+        .flatMap((ns) => [
+          ...parser
+            .parseFromString(ns.innerHTML, 'text/html')
+            .querySelectorAll('link[rel="stylesheet"]'),
+        ])
+        .map((l) => l.href)
+        .filter((h) => {
+          try {
+            return new URL(h).hostname === 'fonts.googleapis.com';
+          } catch {
+            return false;
+          }
+        })
+    ),
+  ];
 
   if (!cssUrls.length) return;
 
   const fallbackToGoogleFonts = () => {
     for (const href of cssUrls)
-      document.head.append(Object.assign(document.createElement('link'), { rel: 'stylesheet', href }));
+      document.head.append(
+        Object.assign(document.createElement('link'), {
+          rel: 'stylesheet',
+          href,
+        })
+      );
   };
 
   // Progressive enhancement: only use COS path when the API is available.
   if (!('crossOriginStorage' in navigator)) return fallbackToGoogleFonts();
 
   // Safe localStorage helpers — private browsing or quota errors must not abort font loading.
-  const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
-  const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
+  const lsGet = (k) => {
+    try {
+      return localStorage.getItem(k);
+    } catch {
+      return null;
+    }
+  };
+  const lsSet = (k, v) => {
+    try {
+      localStorage.setItem(k, v);
+    } catch {}
+  };
 
   const sha256Hex = async (buffer) =>
     [...new Uint8Array(await crypto.subtle.digest('SHA-256', buffer))]
@@ -101,29 +126,37 @@
   };
 
   const FACE_FIELDS = [
-    ['family',       /font-family:\s*['"]([^'"]+)['"]/],
-    ['style',        /font-style:\s*([^;]+)/,        'normal'],
-    ['weight',       /font-weight:\s*([^;]+)/,       '400'],
-    ['stretch',      /font-stretch:\s*([^;]+)/],
-    ['display',      /font-display:\s*([^;]+)/,      'swap'],
+    ['family', /font-family:\s*['"]([^'"]+)['"]/],
+    ['style', /font-style:\s*([^;]+)/, 'normal'],
+    ['weight', /font-weight:\s*([^;]+)/, '400'],
+    ['stretch', /font-stretch:\s*([^;]+)/],
+    ['display', /font-display:\s*([^;]+)/, 'swap'],
     ['unicodeRange', /unicode-range:\s*([^;]+)/],
-    ['url',          /url\(['"]?(https?:[^'")\s]+)['"]?\)/],
+    ['url', /url\(['"]?(https?:[^'")\s]+)['"]?\)/],
   ];
 
   const parseFontFaces = (css) =>
     [...css.matchAll(/@font-face\s*\{([^}]+)\}/g)]
-      .map((m) => Object.fromEntries(
-        FACE_FIELDS.map(([k, re, def]) => [k, (m[1].match(re)?.[1].trim()) ?? def])
-      ))
+      .map((m) =>
+        Object.fromEntries(
+          FACE_FIELDS.map(([k, re, def]) => [
+            k,
+            m[1].match(re)?.[1].trim() ?? def,
+          ])
+        )
+      )
       .filter((f) => f.family && f.url);
 
   // Parses max-age and stale-while-revalidate from a Cache-Control header,
   // returning both as milliseconds.
   const parseCacheControl = (header) => {
-    const ms = (re) => { const m = re.exec(header ?? ''); return m ? +m[1] * 1000 : null; };
+    const ms = (re) => {
+      const m = re.exec(header ?? '');
+      return m ? +m[1] * 1000 : null;
+    };
     return {
-      maxAge: ms(/\bmax-age=(\d+)/i) ?? 86400_000,   // fallback if header absent
-      swr:    ms(/\bstale-while-revalidate=(\d+)/i) ?? 0,
+      maxAge: ms(/\bmax-age=(\d+)/i) ?? 86400_000, // fallback if header absent
+      swr: ms(/\bstale-while-revalidate=(\d+)/i) ?? 0,
     };
   };
 
@@ -172,21 +205,29 @@
 
   try {
     // Fetch descriptors for all CSS URLs in parallel, then flatten into one list.
-    const allFaces = (await Promise.all(cssUrls.map(getFontFaceDescriptors))).flat();
+    const allFaces = (
+      await Promise.all(cssUrls.map(getFontFaceDescriptors))
+    ).flat();
 
-    await Promise.allSettled(allFaces.map(async (face) => {
-      // fetchFontBuffer returns an ArrayBuffer directly — no extra .arrayBuffer()
-      // call needed, and no intermediate Blob on the network-fetch path.
-      // blob: URLs require an explicit font-src blob: in the CSP, whereas
-      // binary data passed directly to FontFace bypasses font-src entirely.
-      const buffer = await fetchFontBuffer(face.url);
-      const descriptors = { style: face.style, weight: face.weight, display: face.display };
-      if (face.stretch) descriptors.stretch = face.stretch;
-      if (face.unicodeRange) descriptors.unicodeRange = face.unicodeRange;
-      const ff = new FontFace(face.family, buffer, descriptors);
-      await ff.load();
-      document.fonts.add(ff);
-    }));
+    await Promise.allSettled(
+      allFaces.map(async (face) => {
+        // fetchFontBuffer returns an ArrayBuffer directly — no extra .arrayBuffer()
+        // call needed, and no intermediate Blob on the network-fetch path.
+        // blob: URLs require an explicit font-src blob: in the CSP, whereas
+        // binary data passed directly to FontFace bypasses font-src entirely.
+        const buffer = await fetchFontBuffer(face.url);
+        const descriptors = {
+          style: face.style,
+          weight: face.weight,
+          display: face.display,
+        };
+        if (face.stretch) descriptors.stretch = face.stretch;
+        if (face.unicodeRange) descriptors.unicodeRange = face.unicodeRange;
+        const ff = new FontFace(face.family, buffer, descriptors);
+        await ff.load();
+        document.fonts.add(ff);
+      })
+    );
   } catch {
     fallbackToGoogleFonts();
   }

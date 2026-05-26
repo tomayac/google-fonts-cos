@@ -29,15 +29,25 @@
     <p style="font-family: 'Honk'">Lorem ipsum</p>
     <p>Lorem ipsum</p>
 
-    <footer style="margin-top:3rem;font-family:monospace;font-size:0.8rem;color:#888">
+    <footer
+      style="
+        margin-top: 3rem;
+        font-family: monospace;
+        font-size: 0.8rem;
+        color: #888;
+      "
+    >
       <button id="clear-btn">Clear local cache &amp; reload</button>
-      <span id="clear-info" style="margin-left:0.5rem"></span>
+      <span id="clear-info" style="margin-left: 0.5rem"></span>
     </footer>
     <script>
       document.getElementById('clear-btn').addEventListener('click', () => {
         let n = 0;
         for (const k of Object.keys(localStorage)) {
-          if (k.startsWith('cos_')) { localStorage.removeItem(k); n++; }
+          if (k.startsWith('cos_')) {
+            localStorage.removeItem(k);
+            n++;
+          }
         }
         document.getElementById('clear-info').textContent =
           `${n} entr${n === 1 ? 'y' : 'ies'} removed`;

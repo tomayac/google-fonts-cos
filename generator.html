@@ -141,12 +141,25 @@
     >
     <div class="variant-selector">
       <label>
-        <input type="radio" name="variant" id="variant-static" value="static" checked>
-        Static — pre-compute SHA-256 hashes (fastest load; regenerate when fonts update)
+        <input
+          type="radio"
+          name="variant"
+          id="variant-static"
+          value="static"
+          checked
+        />
+        Static — pre-compute SHA-256 hashes (fastest load; regenerate when fonts
+        update)
       </label>
       <label>
-        <input type="radio" name="variant" id="variant-dynamic" value="dynamic">
-        Dynamic — no hash map; re-fetches CSS every 24 h to pick up version-bumped font URLs
+        <input
+          type="radio"
+          name="variant"
+          id="variant-dynamic"
+          value="dynamic"
+        />
+        Dynamic — no hash map; re-fetches CSS every 24 h to pick up
+        version-bumped font URLs
       </label>
     </div>
     <button id="run">Generate COS code</button>
@@ -267,7 +280,9 @@
         $('table-container').innerHTML = '';
         $('output-section').innerHTML = '';
 
-        const variant = document.querySelector('input[name="variant"]:checked').value;
+        const variant = document.querySelector(
+          'input[name="variant"]:checked'
+        ).value;
         if (variant === 'dynamic') {
           await runDynamic(preconnects, cssUrls);
         } else {
@@ -284,7 +299,9 @@
             getEsbuild(),
             fetch('cos-loader-dynamic.js').then((r) => {
               if (!r.ok)
-                throw new Error(`cos-loader-dynamic.js fetch failed (${r.status})`);
+                throw new Error(
+                  `cos-loader-dynamic.js fetch failed (${r.status})`
+                );
               return r.text();
             }),
           ]);
@@ -399,7 +416,9 @@
             getEsbuild(),
             fetch('cos-loader-static.js').then((r) => {
               if (!r.ok)
-                throw new Error(`cos-loader-static.js fetch failed (${r.status})`);
+                throw new Error(
+                  `cos-loader-static.js fetch failed (${r.status})`
+                );
               return r.text();
             }),
           ]);

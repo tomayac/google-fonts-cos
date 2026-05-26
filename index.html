@@ -12,9 +12,23 @@
         padding: 0 1.5rem;
         color: #111;
       }
-      h1 { font-size: 1.1rem; margin: 0 0 0.5rem; }
-      p { font-size: 0.85rem; color: #555; margin: 0 0 2rem; }
-      ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 1rem; }
+      h1 {
+        font-size: 1.1rem;
+        margin: 0 0 0.5rem;
+      }
+      p {
+        font-size: 0.85rem;
+        color: #555;
+        margin: 0 0 2rem;
+      }
+      ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+      }
       li a {
         display: block;
         padding: 0.75rem 1rem;
@@ -22,9 +36,18 @@
         text-decoration: none;
         color: inherit;
       }
-      li a:hover { border-color: #888; }
-      li a strong { display: block; font-size: 0.95rem; margin-bottom: 0.2rem; }
-      li a span { font-size: 0.8rem; color: #555; }
+      li a:hover {
+        border-color: #888;
+      }
+      li a strong {
+        display: block;
+        font-size: 0.95rem;
+        margin-bottom: 0.2rem;
+      }
+      li a span {
+        font-size: 0.8rem;
+        color: #555;
+      }
     </style>
   </head>
   <body>
@@ -34,13 +57,21 @@
       <li>
         <a href="index-static.html">
           <strong>Static loader</strong>
-          <span>SHA-256 hashes are pre-computed at build time and baked into the script. Fastest on every visit; requires a rebuild when Google updates a font file.</span>
+          <span
+            >SHA-256 hashes are pre-computed at build time and baked into the
+            script. Fastest on every visit; requires a rebuild when Google
+            updates a font file.</span
+          >
         </a>
       </li>
       <li>
         <a href="index-dynamic.html">
           <strong>Dynamic loader</strong>
-          <span>No pre-computed hashes. Re-fetches the Google Fonts CSS every 24 hours; font version strings in URLs act as automatic cache keys, so updates are picked up without a rebuild.</span>
+          <span
+            >No pre-computed hashes. Re-fetches the Google Fonts CSS every 24
+            hours; font version strings in URLs act as automatic cache keys, so
+            updates are picked up without a rebuild.</span
+          >
         </a>
       </li>
     </ul>

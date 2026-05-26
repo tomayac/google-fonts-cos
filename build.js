@@ -88,8 +88,14 @@ console.log('Launching browser…');
 const browser = await puppeteer.launch({ channel: 'chrome', headless: true });
 
 try {
-  const staticSrc = readFileSync(resolve(__dirname, 'cos-loader-static.js'), 'utf8');
-  const dynamicSrc = readFileSync(resolve(__dirname, 'cos-loader-dynamic.js'), 'utf8');
+  const staticSrc = readFileSync(
+    resolve(__dirname, 'cos-loader-static.js'),
+    'utf8'
+  );
+  const dynamicSrc = readFileSync(
+    resolve(__dirname, 'cos-loader-dynamic.js'),
+    'utf8'
+  );
 
   // ── Static build → index.html ────────────────────────────────────────────
   const staticOutput = await generate(browser, {
