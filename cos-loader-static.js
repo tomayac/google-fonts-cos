@@ -37,7 +37,9 @@
   };
 
   // Progressive enhancement: only use COS path when the API is available.
-  if (!('crossOriginStorage' in navigator)) return fallbackToGoogleFonts();
+  if (typeof navigator.crossOriginStorage?.getFileHandle !== 'function') {
+    return fallbackToGoogleFonts();
+  }
 
   // #build-remove-start — collectHashMap is replaced by the injected literal at build time.
   // Collect the pre-computed stem→SHA-256 map from every

@@ -44,7 +44,9 @@
   };
 
   // Progressive enhancement: only use COS path when the API is available.
-  if (!('crossOriginStorage' in navigator)) return fallbackToGoogleFonts();
+  if (typeof navigator.crossOriginStorage?.getFileHandle !== 'function') {
+    return fallbackToGoogleFonts();
+  }
 
   // Safe localStorage helpers — private browsing or quota errors must not abort font loading.
   const lsGet = (k) => {
