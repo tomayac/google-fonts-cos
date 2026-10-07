@@ -78,7 +78,7 @@
   // Returns a File from COS, or null on NotFoundError (absent or privacy-gated).
   const getFromCOS = async (hash) => {
     try {
-      const handle = await navigator.crossOriginStorage.requestFileHandle(
+      const handle = await navigator.crossOriginStorage.getFileHandle(
         { algorithm: 'SHA-256', value: hash }
       );
       return await handle.getFile();
@@ -92,7 +92,7 @@
   // Non-fatal: a storage failure doesn't prevent the font from being used this session.
   const storeInCOS = async (blob, hash) => {
     try {
-      const handle = await navigator.crossOriginStorage.requestFileHandle(
+      const handle = await navigator.crossOriginStorage.getFileHandle(
         { algorithm: 'SHA-256', value: hash },
         { create: true, origins: '*' }
       );
